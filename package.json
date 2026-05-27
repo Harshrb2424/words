@@ -1,0 +1,13 @@
+{
+  "name": "words-project",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun --cwd frontend run dev",
+    "start:worker": "bun --cwd backend wrangler dev",
+    "build:frontend": "bun --cwd frontend run build",
+    "lint:frontend": "bun --cwd frontend run lint",
+    "typecheck:frontend": "bun --cwd frontend run typecheck",
+    "typecheck:backend": "bun --cwd backend run typecheck"
+  }
+}

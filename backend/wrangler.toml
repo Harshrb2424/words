@@ -1,0 +1,17 @@
+name = "words-backend"
+main = "index.ts"
+compatibility_date = "2024-05-24"
+
+[ai]
+binding = "AI"
+remote = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "quote-db"
+database_id = "quote-db" # Local / Placeholder dev database ID
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "quote-index"
+remote = true
