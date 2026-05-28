@@ -61,8 +61,8 @@ export default async function Page() {
   let quotes: Quote[] = [];
 
   try {
-    console.log(`Server Component: Fetching quotes from Cloudflare Worker at ${apiUrl}/api/quotes...`);
-    const response = await fetch(`${apiUrl}/api/quotes`, {
+    console.log(`Server Component: Fetching quotes from Cloudflare Worker at ${apiUrl}/api/quotes?limit=30&offset=0...`);
+    const response = await fetch(`${apiUrl}/api/quotes?limit=30&offset=0`, {
       cache: "no-store",
       headers: {
         "Accept": "application/json"
@@ -72,6 +72,8 @@ export default async function Page() {
 
     if (response.ok) {
       quotes = await response.json();
+      // Cap at top 30 quotes for optimal page rendering and performance
+      quotes = quotes.slice(0, 30);
       console.log(`Server Component: Successfully loaded ${quotes.length} quotes from active API.`);
     } else {
       console.warn(`Server Component: Worker API returned status ${response.status}. Using pre-seeded quotes.`);

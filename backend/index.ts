@@ -45,7 +45,7 @@ export default {
       // Route routing
       if (url.pathname === "/api/quotes" || url.pathname === "/") {
         if (request.method === "GET") {
-          return await handleGetQuotes(env);
+          return await handleGetQuotes(env, url);
         } else if (request.method === "POST") {
           return await handlePostQuote(request, env);
         } else {
@@ -72,6 +72,28 @@ export default {
       if (url.pathname === "/api/maintenance/reindex") {
         if (request.method === "POST" || request.method === "GET") {
           return await handleMaintenanceReindex(env);
+        } else {
+          return new Response(JSON.stringify({ error: "Method not allowed" }), {
+            status: 405,
+            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+          });
+        }
+      }
+
+      // Liking quote: POST /api/quotes/:id/like
+      if (url.pathname.startsWith("/api/quotes/") && url.pathname.endsWith("/like")) {
+        const parts = url.pathname.split("/");
+        const idStr = parts[3];
+        const id = idStr ? parseInt(idStr) : NaN;
+        if (isNaN(id)) {
+          return new Response(JSON.stringify({ error: "Invalid ID for liking" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+          });
+        }
+
+        if (request.method === "POST") {
+          return await handleLikeQuote(id, env);
         } else {
           return new Response(JSON.stringify({ error: "Method not allowed" }), {
             status: 405,
@@ -124,11 +146,25 @@ export default {
  * Handle GET /api/quotes
  * Fetches all quotes from Cloudflare D1
  */
-async function handleGetQuotes(env: Env): Promise<Response> {
+async function handleGetQuotes(env: Env, url: URL): Promise<Response> {
   try {
-    const { results } = await env.DB.prepare(
-      "SELECT * FROM quotes ORDER BY id DESC"
-    ).all();
+    const limit = parseInt(url.searchParams.get("limit") || "1000");
+    const offset = parseInt(url.searchParams.get("offset") || "0");
+    const q = url.searchParams.get("q") || "";
+
+    let query = "SELECT * FROM quotes";
+    const binds: any[] = [];
+
+    if (q) {
+      query += " WHERE quote_text LIKE ? OR author LIKE ? OR source LIKE ? OR tags LIKE ?";
+      const searchWildcard = `%${q}%`;
+      binds.push(searchWildcard, searchWildcard, searchWildcard, searchWildcard);
+    }
+
+    query += " ORDER BY id DESC LIMIT ? OFFSET ?";
+    binds.push(limit, offset);
+
+    const { results } = await env.DB.prepare(query).bind(...binds).all();
 
     // Parse JSON fields in database results for standard frontend usage
     const parsedResults = results.map((row: any) => ({
@@ -180,6 +216,45 @@ async function handleGetQuoteById(id: number, env: Env): Promise<Response> {
     console.error(`Error fetching quote with ID ${id}:`, error);
     return new Response(
       JSON.stringify({ error: "Database error", message: error.message }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      }
+    );
+  }
+}
+
+/**
+ * Handle POST /api/quotes/:id/like
+ * Increments the like count for a specific quote in Cloudflare D1
+ */
+async function handleLikeQuote(id: number, env: Env): Promise<Response> {
+  try {
+    // Check if quote exists
+    const quote = await env.DB.prepare("SELECT id, likes FROM quotes WHERE id = ?")
+      .bind(id)
+      .first<{ id: number; likes: number }>();
+
+    if (!quote) {
+      return new Response(JSON.stringify({ error: "Quote not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      });
+    }
+
+    const newLikesCount = (quote.likes || 0) + 1;
+    await env.DB.prepare("UPDATE quotes SET likes = ? WHERE id = ?")
+      .bind(newLikesCount, id)
+      .run();
+
+    return new Response(JSON.stringify({ success: true, likes: newLikesCount }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    });
+  } catch (err: any) {
+    console.error("Failed to like quote:", err);
+    return new Response(
+      JSON.stringify({ error: "Failed to increment likes", message: err.message || String(err) }),
       {
         status: 500,
         headers: { "Content-Type": "application/json", ...CORS_HEADERS },

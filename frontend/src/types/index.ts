@@ -8,4 +8,5 @@ export interface Quote {
   tags: string[];
   related_quote_ids: number[];
   color?: string;
+  likes?: number;
 }

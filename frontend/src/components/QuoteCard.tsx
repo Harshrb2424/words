@@ -1,7 +1,7 @@
 "use client";
 
 import { Quote } from "@/types";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Heart } from "lucide-react";
 import Link from "next/link";
 import { getQuoteSlug } from "@/utils/slug";
 import { getAccentStyles } from "@/utils/color";
@@ -57,10 +57,16 @@ export default function QuoteCard({
 
       {/* Quote Footer containing Author signature and dynamic page Link */}
       <div className="mt-5 flex items-center justify-between border-t border-dashed border-border-custom pt-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3.5">
           <span className="font-serif text-sm italic text-foreground/80">
             - {quote.author || "Unknown"}
           </span>
+          {typeof quote.likes === "number" && quote.likes > 0 && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-500/85">
+              <Heart className="h-3 w-3 fill-rose-500 stroke-rose-500" />
+              <span>{quote.likes}</span>
+            </span>
+          )}
         </div>
         
         <Link

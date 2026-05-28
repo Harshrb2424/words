@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Copy, Share2, Image, Check } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Copy, Share2, Image, Check, Heart } from "lucide-react";
 import { Quote } from "@/types";
 import { getAccentStyles } from "@/utils/color";
 
@@ -13,8 +13,21 @@ interface QuoteActionsProps {
 export default function QuoteActions({ quote, onOpenWallpaper }: QuoteActionsProps) {
   const [copiedText, setCopiedText] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(quote.likes || 0);
 
   const accent = getAccentStyles(quote.color);
+
+  useEffect(() => {
+    try {
+      const likedQuotes = JSON.parse(localStorage.getItem("words_liked_quotes") || "[]");
+      if (Array.isArray(likedQuotes) && likedQuotes.includes(quote.id)) {
+        setLiked(true);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [quote.id]);
 
   const handleCopyText = async () => {
     try {
@@ -42,6 +55,34 @@ export default function QuoteActions({ quote, onOpenWallpaper }: QuoteActionsPro
     }
   };
 
+  const handleLike = async () => {
+    if (liked) return;
+
+    setLiked(true);
+    setLikesCount((prev) => prev + 1);
+
+    try {
+      const likedQuotes = JSON.parse(localStorage.getItem("words_liked_quotes") || "[]");
+      if (!likedQuotes.includes(quote.id)) {
+        likedQuotes.push(quote.id);
+        localStorage.setItem("words_liked_quotes", JSON.stringify(likedQuotes));
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787";
+      const res = await fetch(`${apiUrl}/api/quotes/${quote.id}/like`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data.likes === "number") {
+          setLikesCount(data.likes);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to update likes on server:", err);
+    }
+  };
+
   return (
     <div
       style={{
@@ -51,6 +92,20 @@ export default function QuoteActions({ quote, onOpenWallpaper }: QuoteActionsPro
       }}
       className="flex flex-wrap items-center justify-center gap-3 pt-2 w-full mx-auto"
     >
+      {/* Heart / Like Quote Pill */}
+      <button
+        onClick={handleLike}
+        className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all duration-300 cursor-pointer ${
+          liked
+            ? "bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-450 border border-rose-200/30 scale-105"
+            : "bg-card-custom border border-border-custom text-foreground/80 hover:bg-rose-50/50 hover:text-rose-600 dark:hover:bg-rose-950/10 dark:hover:text-rose-400 hover:border-rose-300/40 shadow-2xs"
+        }`}
+        title={liked ? "You liked this quote" : "Like this quote"}
+      >
+        <Heart className={`h-3.5 w-3.5 transition-transform active:scale-135 duration-300 ${liked ? "fill-rose-500 stroke-rose-600 dark:stroke-rose-400" : ""}`} />
+        <span>{likesCount} Likes</span>
+      </button>
+
       {/* Copy Quote Text Pill */}
       <button
         onClick={handleCopyText}

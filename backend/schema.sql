@@ -9,5 +9,6 @@ CREATE TABLE IF NOT EXISTS quotes (
     ai_context TEXT NOT NULL,
     tags TEXT NOT NULL, -- JSON array of strings
     related_quote_ids TEXT NOT NULL, -- JSON array of integers (IDs of similar quotes)
-    color TEXT -- Nullable hex color based on theme
+    color TEXT, -- Nullable hex color based on theme
+    likes INTEGER DEFAULT 0 -- Incremental quote likes count
 );
