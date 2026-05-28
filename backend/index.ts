@@ -49,7 +49,8 @@ export default {
         origin.includes("127.0.0.1") ||
         referer.includes("words.harshrb.in") || 
         referer.includes("localhost") || 
-        referer.includes("127.0.0.1");
+        referer.includes("127.0.0.1") ||
+        request.headers.get("x-words-internal") === "words-frontend";
 
       if (!isAllowed) {
         console.warn(`Unauthorized request blocked. Path: ${url.pathname}, Origin: ${origin}, Referer: ${referer}`);
