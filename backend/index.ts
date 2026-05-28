@@ -29,9 +29,18 @@ interface QuoteMetadata {
   color?: string;
 }
 
+// Global in-memory cache for GET requests (purged on writes)
+const readCache = new Map<string, { body: string; headers: [string, string][]; status: number; expiry: number }>();
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    // Clear cache on any state mutation request
+    if (request.method === "POST" || request.method === "DELETE" || request.method === "PUT") {
+      console.log(`State-modifying request detected: ${request.method} ${url.pathname}. Invalidating in-memory cache.`);
+      readCache.clear();
+    }
 
     // Handle CORS preflight requests
     if (request.method === "OPTIONS") {
@@ -41,6 +50,54 @@ export default {
       });
     }
 
+    // Check in-memory cache for GET requests
+    const cacheKey = `${request.method}:${url.pathname}:${url.search}`;
+    if (request.method === "GET" && !url.pathname.includes("/api/quotes/bulk")) {
+      const cached = readCache.get(cacheKey);
+      if (cached && cached.expiry > Date.now()) {
+        console.log(`Cache HIT for key: ${cacheKey}`);
+        const headersInit: Record<string, string> = {};
+        for (const [k, v] of cached.headers) {
+          headersInit[k] = v;
+        }
+        return new Response(cached.body, {
+          status: cached.status,
+          headers: headersInit,
+        });
+      }
+      console.log(`Cache MISS for key: ${cacheKey}`);
+    }
+
+    // Process actual request
+    const response = await this.handleActualFetch(request, env, ctx, url);
+
+    // Cache successful GET responses for 1 hour
+    if (request.method === "GET" && response.status === 200 && !url.pathname.includes("/api/quotes/bulk")) {
+      const clone = response.clone();
+      ctx.waitUntil((async () => {
+        try {
+          const bodyText = await clone.text();
+          const headersList: [string, string][] = [];
+          response.headers.forEach((value, key) => {
+            headersList.push([key, value]);
+          });
+          readCache.set(cacheKey, {
+            body: bodyText,
+            headers: headersList,
+            status: response.status,
+            expiry: Date.now() + 3600000, // 1 hour
+          });
+          console.log(`Cached response successfully for key: ${cacheKey}`);
+        } catch (e) {
+          console.warn("Failed to cache response body:", e);
+        }
+      })());
+    }
+
+    return response;
+  },
+
+  async handleActualFetch(request: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
     try {
       // Route routing
       if (url.pathname === "/api/quotes" || url.pathname === "/") {

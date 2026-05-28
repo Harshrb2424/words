@@ -29,6 +29,22 @@ export default function QuotesArchive({ initialQuotes }: QuotesArchiveProps) {
     setHasMore(initialQuotes.length === 30);
   }, [initialQuotes]);
 
+  // Load locally user-submitted quotes and prepend them so they show instantly
+  useEffect(() => {
+    try {
+      const localSubmitted = JSON.parse(localStorage.getItem("words_user_submitted_quotes") || "[]") as Quote[];
+      if (localSubmitted.length > 0) {
+        setQuotes((prev) => {
+          const fetchedIds = new Set(prev.map((q) => q.id));
+          const uniqueLocal = localSubmitted.filter((q) => !fetchedIds.has(q.id));
+          return [...uniqueLocal, ...prev];
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to load locally submitted quotes:", e);
+    }
+  }, []);
+
   // Extract unique tags for tag pill filters
   const allTags = Array.from(
     new Set(initialQuotes.flatMap((q) => q.tags || []))

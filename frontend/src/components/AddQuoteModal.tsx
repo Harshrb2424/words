@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, Sparkles, AlertCircle, CheckCircle2, ArrowRight, ArrowLeft } from "lucide-react";
+import { getQuoteSlug } from "@/utils/slug";
 
 interface AddQuoteModalProps {
   isOpen: boolean;
@@ -102,13 +103,26 @@ export default function AddQuoteModal({ isOpen, onClose }: AddQuoteModalProps) {
       setSteps(prev => prev.map(s => ({ ...s, status: "success" })));
       setSuccessQuote(data.quote);
       
+      // Save newly created quote to local storage so homepage displays it instantly
+      try {
+        const localSubmitted = JSON.parse(localStorage.getItem("words_user_submitted_quotes") || "[]");
+        localSubmitted.unshift(data.quote);
+        localStorage.setItem("words_user_submitted_quotes", JSON.stringify(localSubmitted));
+      } catch (e) {
+        console.warn("Failed to store quote locally:", e);
+      }
+
       // Refresh Next.js server components
       router.refresh();
       
-      // Auto close after 2.5 seconds on success
+      // Redirect to the newly created quote page after a brief delay
       setTimeout(() => {
+        if (data.quote) {
+          const slug = getQuoteSlug(data.quote);
+          router.push(`/quote/${slug}`);
+        }
         onClose();
-      }, 2500);
+      }, 1500);
 
     } catch (err: any) {
       console.error("Submission failed:", err);

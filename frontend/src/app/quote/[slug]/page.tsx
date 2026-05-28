@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   try {
-    const res = await fetch(`${apiUrl}/api/quotes/${id}`, { cache: "no-store" });
+    const res = await fetch(`${apiUrl}/api/quotes/${id}`, { next: { revalidate: 3600 } });
     if (res.ok) {
       const quote: Quote = await res.json();
       const cleanQuote = quote.quote_text.length > 50 
@@ -59,7 +59,7 @@ export default async function QuotePage({ params }: PageProps) {
 
   let quote: Quote | null = null;
   try {
-    const res = await fetch(`${apiUrl}/api/quotes/${id}`, { cache: "no-store" });
+    const res = await fetch(`${apiUrl}/api/quotes/${id}`, { next: { revalidate: 3600 } });
     if (res.ok) {
       quote = await res.json();
     }
@@ -78,7 +78,7 @@ export default async function QuotePage({ params }: PageProps) {
       relatedQuotes = await Promise.all(
         quote.related_quote_ids.map(async (rId: number) => {
           try {
-            const res = await fetch(`${apiUrl}/api/quotes/${rId}`, { cache: "no-store" });
+            const res = await fetch(`${apiUrl}/api/quotes/${rId}`, { next: { revalidate: 3600 } });
             if (res.ok) return await res.json() as Quote;
           } catch (e) {
             // ignore
