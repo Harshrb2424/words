@@ -237,6 +237,56 @@ async function handleDeleteQuote(id: number, env: Env): Promise<Response> {
  * 6. Store vector embedding in Cloudflare Vectorize
  */
 /**
+/**
+ * Helper to perform a zero-dependency web search on DuckDuckGo HTML 
+ * to fetch context snippets for a quote, resolving real authors and origins.
+ */
+async function searchWeb(query: string): Promise<string> {
+  try {
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const response = await fetch(searchUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      }
+    });
+
+    if (!response.ok) {
+      console.warn(`DuckDuckGo Search returned status: ${response.status}`);
+      return "No web search results available.";
+    }
+
+    const html = await response.text();
+    
+    // Extract snippets with result__snippet class
+    const snippetRegex = /class="result__snippet"[^>]*>([\s\S]*?)<\//g;
+    const snippets: string[] = [];
+    let match;
+    let count = 0;
+
+    while ((match = snippetRegex.exec(html)) !== null && count < 6) {
+      const cleanSnippet = match[1]
+        .replace(/<[^>]*>/g, "") // Strip nested tags
+        .replace(/\s+/g, " ")    // Normalize whitespace
+        .trim();
+      if (cleanSnippet) {
+        snippets.push(cleanSnippet);
+        count++;
+      }
+    }
+
+    if (snippets.length === 0) {
+      return "No web search context matches found.";
+    }
+
+    return snippets.map((s, idx) => `[Result ${idx + 1}]: ${s}`).join("\n\n");
+  } catch (err: any) {
+    console.error("DuckDuckGo search fetch error:", err);
+    return `Search query failed: ${err.message || String(err)}`;
+  }
+}
+
+/**
  * Core helper that processes a single raw text quote:
  * 1. Generates text embedding.
  * 2. Checks Vectorize for duplicates (>0.95).
@@ -249,11 +299,22 @@ async function processSingleQuote(
   rawText: string,
   env: Env
 ): Promise<{ success: boolean; status: number; quote?: any; error?: string }> {
+  // Step 0: Perform Web Search RAG to identify real author/source
+  console.log(`Performing web search to identify origin for quote: "${rawText.substring(0, 50)}..."`);
+  const searchQuery = rawText.replace(/[\r\n]+/g, " ").substring(0, 150).trim();
+  const webSearchContext = await searchWeb(searchQuery);
+  console.log("Web Search Context retrieved length:", webSearchContext.length);
+
   // Step 1: LLM Information Enrichment & Ingestion Text Grammar Cleanup
   let llmData: QuoteMetadata;
   try {
     const systemPrompt = `You are a sophisticated literary curator and professional grammar editor AI.
 Analyze the quote provided by the user. Clean it, correct spelling and capitalization mistakes, fix missing punctuation, ensure correct syntax, and extract the required metadata into a valid JSON object.
+
+We have searched the web for matches of this quote. Use the following WEB SEARCH RESULTS context to accurately identify the real author, the book, poem, movie, play, television series, or origin of the quote. If the search results contain specific mentions of who said it or where it comes from, prioritize that information. Do NOT write "Unknown" if there are any clues in the search results context.
+
+WEB SEARCH RESULTS CONTEXT:
+${webSearchContext}
 
 Rules for "cleaned_text":
 - Correct spelling, grammar, and capitalization (e.g. if the input is "i just miss you and want to be with you", format it as "I just miss you and want to be with you.").
@@ -263,7 +324,7 @@ Rules for "cleaned_text":
 
 JSON Schema Output format:
 1. "author": Extract the author's full name. If completely unknown, write "Unknown".
-2. "source": Extract the book, poem, movie, play, speech, or origin. If completely unknown, write "Unknown".
+2. "source": Extract the book, poem, movie, play, speech, television series, or origin. If completely unknown, write "Unknown".
 3. "language": Identify the language ("English", "Hindi", or "Hinglish").
 4. "ai_context": Write a profound, beautifully articulated exactly 2-sentence philosophical context explaining the deeper existential or poetic meaning of this quote.
 5. "tags": Exactly 3 relevant, highly descriptive one-word tags (capitalized) summarizing its core themes (e.g., ["Mortality", "Solitude", "Nostalgia"]).

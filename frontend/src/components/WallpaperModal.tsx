@@ -4,13 +4,45 @@ import React, { useState, useEffect, useRef } from "react";
 import { X, Download, Eye, Smartphone, Monitor, Settings, Check, LayoutGrid } from "lucide-react";
 import { Quote } from "@/types";
 
+const InstagramIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={props.className}
+    {...props}
+  >
+    <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+  </svg>
+);
+
+const TwitterIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={props.className}
+    {...props}
+  >
+    <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z" />
+  </svg>
+);
+
 interface WallpaperModalProps {
   isOpen: boolean;
   onClose: () => void;
   quote: Quote;
 }
 
-type ResolutionPreset = "phone-hd" | "phone-4k" | "pc-fhd" | "pc-2k" | "pc-4k" | "custom";
+type ResolutionPreset = "phone-hd" | "phone-4k" | "pc-fhd" | "pc-2k" | "pc-4k" | "insta-square" | "insta-portrait" | "twitter-post" | "custom";
 
 export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -50,6 +82,18 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
       case "pc-4k":
         setWidth(3840);
         setHeight(2160);
+        break;
+      case "insta-square":
+        setWidth(1080);
+        setHeight(1080);
+        break;
+      case "insta-portrait":
+        setWidth(1080);
+        setHeight(1350);
+        break;
+      case "twitter-post":
+        setWidth(1200);
+        setHeight(675);
         break;
       default:
         break;
@@ -270,7 +314,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
         <div className="flex-1 bg-background/30 p-6 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-border-custom overflow-hidden">
           <span className="text-[10px] font-bold tracking-widest uppercase text-foreground/45 mb-3 flex items-center gap-1.5">
             <Eye className="h-3.5 w-3.5" />
-            Live Preview (Canvas Rendering)
+            Preview
           </span>
 
           <div className="relative flex-1 w-full flex items-center justify-center overflow-hidden max-h-[45vh] md:max-h-[60vh]">
@@ -358,6 +402,51 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                   <div className="text-left">
                     <span className="block">PC 4K Ultra</span>
                     <span className="text-[9px] opacity-70">3840 x 2160</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setPreset("insta-square")}
+                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                    preset === "insta-square"
+                      ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
+                      : "border-border-custom hover:border-zinc-400 text-foreground"
+                  }`}
+                >
+                  <InstagramIcon className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-455" />
+                  <div className="text-left">
+                    <span className="block font-bold">Insta Square</span>
+                    <span className="text-[9px] opacity-70">1080 x 1080</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setPreset("insta-portrait")}
+                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                    preset === "insta-portrait"
+                      ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
+                      : "border-border-custom hover:border-zinc-400 text-foreground"
+                  }`}
+                >
+                  <InstagramIcon className="h-4 w-4 shrink-0 text-rose-500" />
+                  <div className="text-left">
+                    <span className="block">Insta Portrait</span>
+                    <span className="text-[9px] opacity-70">1080 x 1350</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setPreset("twitter-post")}
+                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                    preset === "twitter-post"
+                      ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
+                      : "border-border-custom hover:border-zinc-400 text-foreground"
+                  }`}
+                >
+                  <TwitterIcon className="h-4 w-4 shrink-0 text-sky-500" />
+                  <div className="text-left">
+                    <span className="block">Twitter/X Post</span>
+                    <span className="text-[9px] opacity-70">1200 x 675</span>
                   </div>
                 </button>
               </div>

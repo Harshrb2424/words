@@ -188,7 +188,7 @@ export default function AddQuoteModal({ isOpen, onClose }: AddQuoteModalProps) {
             <div className="py-2 space-y-5">
               <div className="flex flex-col items-center justify-center text-center pb-4 border-b border-border-custom">
                 <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-accent-bg-custom">
-                  <Sparkles className="h-5 w-5 animate-spin text-accent-custom" />
+                  <Sparkles className="h-5 w-5 text-accent-custom" />
                 </div>
                 <h4 className="mt-3 text-sm font-bold text-foreground">
                   Pipeline Running
