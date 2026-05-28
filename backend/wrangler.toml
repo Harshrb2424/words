@@ -1,4 +1,4 @@
-name = "words-backend"
+name = "words"
 main = "index.ts"
 compatibility_date = "2024-05-24"
 
