@@ -36,6 +36,36 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // Public Homepage API restriction check
+    const isHomepageApi = (url.pathname === "/api/quotes" || url.pathname === "/") && request.method === "GET";
+
+    if (!isHomepageApi) {
+      const origin = request.headers.get("Origin") || "";
+      const referer = request.headers.get("Referer") || "";
+      
+      const isAllowed = 
+        origin.includes("words.harshrb.in") || 
+        origin.includes("localhost") || 
+        origin.includes("127.0.0.1") ||
+        referer.includes("words.harshrb.in") || 
+        referer.includes("localhost") || 
+        referer.includes("127.0.0.1");
+
+      if (!isAllowed) {
+        console.warn(`Unauthorized request blocked. Path: ${url.pathname}, Origin: ${origin}, Referer: ${referer}`);
+        return new Response(JSON.stringify({ 
+          error: "Forbidden", 
+          message: "This is not a public API, it is only for words.harshrb.in" 
+        }), {
+          status: 403,
+          headers: { 
+            "Content-Type": "application/json", 
+            ...CORS_HEADERS 
+          },
+        });
+      }
+    }
+
     // Clear cache on any state mutation request
     if (request.method === "POST" || request.method === "DELETE" || request.method === "PUT") {
       console.log(`State-modifying request detected: ${request.method} ${url.pathname}. Invalidating in-memory cache.`);
