@@ -26,6 +26,7 @@ interface QuoteMetadata {
   ai_context: string;
   tags: string[];
   cleaned_text?: string;
+  color?: string;
 }
 
 export default {
@@ -267,6 +268,7 @@ JSON Schema Output format:
 4. "ai_context": Write a profound, beautifully articulated exactly 2-sentence philosophical context explaining the deeper existential or poetic meaning of this quote.
 5. "tags": Exactly 3 relevant, highly descriptive one-word tags (capitalized) summarizing its core themes (e.g., ["Mortality", "Solitude", "Nostalgia"]).
 6. "cleaned_text": The polished, grammatically perfect, beautifully punctuated quote text with no surrounding outer double-quotes.
+7. "color": Generate a representative hex color code (e.g., "#d97706", "#2563eb", "#db2777", "#059669", "#7c3aed") based on the mood, category, and theme of the quote. The hex code must be a valid 6-character hex string starting with "#" and should be a solid, rich medium-tone color (avoiding pure white, pure black, or extremely washed-out tones) that works elegantly.
 
 Output MUST be strictly valid JSON. Do not write any markdown code block wrap, introduction, or explanation outside the JSON format.`;
 
@@ -292,6 +294,7 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
       ai_context: "This quote invites deep reflection on the nature of existence and the quiet spaces within human experience.",
       tags: ["Reflection", "Wisdom", "Existential"],
       cleaned_text: rawText,
+      color: "#d97706",
     };
   }
 
@@ -358,8 +361,8 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
   let insertedId: number;
   try {
     const d1Result = await env.DB.prepare(
-      `INSERT INTO quotes (quote_text, author, source, language, ai_context, tags, related_quote_ids) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO quotes (quote_text, author, source, language, ai_context, tags, related_quote_ids, color) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       finalizedText,
       llmData.author || "Unknown",
@@ -367,7 +370,8 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
       llmData.language || "English",
       llmData.ai_context || "",
       JSON.stringify(llmData.tags || []),
-      JSON.stringify(relatedQuoteIds)
+      JSON.stringify(relatedQuoteIds),
+      llmData.color || null
     ).run();
 
     if (!d1Result.meta || !d1Result.meta.last_row_id) {
@@ -416,6 +420,7 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
       ai_context: llmData.ai_context,
       tags: llmData.tags,
       related_quote_ids: relatedQuoteIds,
+      color: llmData.color || null,
     },
   };
 }

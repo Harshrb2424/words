@@ -7,4 +7,5 @@ export interface Quote {
   ai_context: string;
   tags: string[];
   related_quote_ids: number[];
+  color?: string;
 }

@@ -6,35 +6,35 @@ An intelligent, minimalist quote archive built on the Cloudflare ecosystem. This
 
 This project is built for speed, affordability, and zero-maintenance scaling using the Cloudflare ecosystem:
 
-* **Frontend:** Next.js (App Router) / React — Hosted on **Cloudflare Pages** for edge-network speed.
-* **Database:** **Cloudflare D1** — Serverless SQL database for storing quotes, authors, and AI contexts.
-* **Backend/API:** **Cloudflare Workers** — Serverless functions handling form submissions, AI processing, and vector logic.
-* **AI Integration:** **Cloudflare Workers AI** — Used to auto-enrich quotes with context, metadata, and tags.
-* **Vector Engine:** **Cloudflare Vectorize** — Used for fuzzy-matching (duplicate prevention) and generating "Similar Quotes."
+- **Frontend:** Next.js (App Router) / React - Hosted on **Cloudflare Pages** for edge-network speed.
+- **Database:** **Cloudflare D1** - Serverless SQL database for storing quotes, authors, and AI contexts.
+- **Backend/API:** **Cloudflare Workers** - Serverless functions handling form submissions, AI processing, and vector logic.
+- **AI Integration:** **Cloudflare Workers AI** - Used to auto-enrich quotes with context, metadata, and tags.
+- **Vector Engine:** **Cloudflare Vectorize** - Used for fuzzy-matching (duplicate prevention) and generating "Similar Quotes."
 
 ---
 
 ## Core Features
 
-* **AI Auto-Enrichment:** Submit raw text, and the backend LLM pipeline automatically extracts the author, source, language, generates 3 tags, and writes a 2-3 sentence philosophical context.
-* **Smart Duplicate Prevention (Fuzzy Match):** Converts incoming quotes into vector embeddings. If a submission mathematically matches an existing quote by >95%, it is blocked as a duplicate.
-* **Pre-Compiled "Similar Quotes":** Uses Cloudflare Vectorize to find the top 3 related quotes (scoring between 75% and 94% similarity) and links their IDs directly in the database for instant, zero-latency rendering on the frontend.
-* **Minimalist UI:** A distraction-free masonry layout with a "Dive Deeper" card flip/expand mechanic to reveal the AI context without cluttering the main feed.
+- **AI Auto-Enrichment:** Submit raw text, and the backend LLM pipeline automatically extracts the author, source, language, generates 3 tags, and writes a 2-3 sentence philosophical context.
+- **Smart Duplicate Prevention (Fuzzy Match):** Converts incoming quotes into vector embeddings. If a submission mathematically matches an existing quote by >95%, it is blocked as a duplicate.
+- **Pre-Compiled "Similar Quotes":** Uses Cloudflare Vectorize to find the top 3 related quotes (scoring between 75% and 94% similarity) and links their IDs directly in the database for instant, zero-latency rendering on the frontend.
+- **Minimalist UI:** A distraction-free masonry layout with a "Dive Deeper" card flip/expand mechanic to reveal the AI context without cluttering the main feed.
 
 ---
 
 ## Database Structure (Cloudflare D1)
 
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| `id` | Integer | Primary key (auto-incremented). |
-| `quote_text` | Text | The actual quote text (**UNIQUE** constraint applied). |
-| `author` | Text | E.g., "Haruki Murakami", "Rumi", or "Unknown". |
-| `source` | Text | E.g., Book title, Movie, or Web. |
-| `language` | Text | 'English', 'Hindi', 'Hinglish'. |
-| `ai_context` | Text | The AI-generated background/meaning. |
-| `tags` | Text | Stored as a JSON string (e.g., `["Love", "Grief", "Motivation"]`). |
-| `related_quote_ids` | Text | Stored as a JSON array of IDs for the "Similar Quotes" feature. |
+| Column Name         | Data Type | Description                                                        |
+| ------------------- | --------- | ------------------------------------------------------------------ |
+| `id`                | Integer   | Primary key (auto-incremented).                                    |
+| `quote_text`        | Text      | The actual quote text (**UNIQUE** constraint applied).             |
+| `author`            | Text      | E.g., "Haruki Murakami", "Rumi", or "Unknown".                     |
+| `source`            | Text      | E.g., Book title, Movie, or Web.                                   |
+| `language`          | Text      | 'English', 'Hindi', 'Hinglish'.                                    |
+| `ai_context`        | Text      | The AI-generated background/meaning.                               |
+| `tags`              | Text      | Stored as a JSON string (e.g., `["Love", "Grief", "Motivation"]`). |
+| `related_quote_ids` | Text      | Stored as a JSON array of IDs for the "Similar Quotes" feature.    |
 
 ---
 
@@ -52,9 +52,9 @@ When a new quote is submitted via the admin dashboard, the Cloudflare Worker exe
 
 ## UI/UX Guidelines
 
-* **Typography:** Playfair Display (or similar elegant serif) for the main quotes. Clean sans-serif (like Inter or Roboto) for UI elements, tags, and AI context.
-* **Layout:** Pinterest-style masonry grid.
-* **Interaction:** Cards display only the `quote_text` by default. Clicking expands the card to show the `ai_context`, tags, and the pre-compiled **Similar Quotes** list.
+- **Typography:** Playfair Display (or similar elegant serif) for the main quotes. Clean sans-serif (like Inter or Roboto) for UI elements, tags, and AI context.
+- **Layout:** Pinterest-style masonry grid.
+- **Interaction:** Cards display only the `quote_text` by default. Clicking expands the card to show the `ai_context`, tags, and the pre-compiled **Similar Quotes** list.
 
 ---
 
