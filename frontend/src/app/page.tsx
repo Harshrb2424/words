@@ -2,6 +2,7 @@ import { Quote } from "@/types";
 import QuotesArchive from "@/components/QuotesArchive";
 
 export const dynamic = "force-dynamic";
+export const runtime = "edge";
 
 const FALLBACK_QUOTES: Quote[] = [
   {

@@ -11,6 +11,7 @@ interface PageProps {
 }
 
 export const dynamic = "force-dynamic";
+export const runtime = "edge";
 
 /**
  * Generate SEO-rich dynamic metadata for the quote details page.
