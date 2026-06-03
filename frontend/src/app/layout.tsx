@@ -16,8 +16,25 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Words - AI-Powered Quote Archive",
+  metadataBase: new URL("https://words.harshrb.in"),
+  title: {
+    default: "Words - AI-Powered Quote Archive",
+    template: "%s | Words Sanctuary"
+  },
   description: "An intelligent, minimalist quote archive built on the Cloudflare edge network, powered by Workers AI and Vectorize.",
+  openGraph: {
+    title: "Words - AI-Powered Quote Archive",
+    description: "An intelligent, minimalist quote archive built on the Cloudflare edge network, powered by Workers AI and Vectorize.",
+    url: "https://words.harshrb.in",
+    siteName: "Words Sanctuary",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Words - AI-Powered Quote Archive",
+    description: "An intelligent, minimalist quote archive built on the Cloudflare edge network, powered by Workers AI and Vectorize.",
+  }
 };
 
 export default function RootLayout({

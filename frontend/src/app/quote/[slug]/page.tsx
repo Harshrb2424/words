@@ -40,9 +40,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         : quote.quote_text;
       
       return {
-        title: `“${cleanQuote}” — ${quote.author || "Unknown"} | Words Sanctuary`,
+        title: {
+          absolute: `“${cleanQuote}” — ${quote.author || "Unknown"} | Words Sanctuary`
+        },
         description: quote.ai_context || `Reflections on a quote by ${quote.author}.`,
         openGraph: {
+          title: `Quote by ${quote.author || "Unknown"}`,
+          description: quote.quote_text,
+          url: `https://words.harshrb.in/quote/${slug}`,
+          type: "article",
+          siteName: "Words Sanctuary",
+        },
+        twitter: {
+          card: "summary_large_image",
           title: `Quote by ${quote.author || "Unknown"}`,
           description: quote.quote_text,
         }
@@ -52,7 +62,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // ignore
   }
 
-  return { title: "sanctuary - Words" };
+  return {
+    title: {
+      absolute: "sanctuary - Words"
+    }
+  };
 }
 
 export default async function QuotePage({ params }: PageProps) {

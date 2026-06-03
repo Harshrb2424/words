@@ -10,12 +10,13 @@ For step-by-step instructions on provisioning and running your own self-hosted d
 
 ## Technical Documents Map
 
-The development of the Words platform progressed through four key architectural phases. The detailed, phase-specific technical logs can be accessed here:
+The development of the Words platform progressed through five key architectural phases. The detailed, phase-specific technical logs can be accessed here:
 
 * [Phase 1: AI-Powered Ingestion Pipeline and Relational D1 Schema (P1.md)](P1.md)
 * [Phase 2: Next.js Frontend Framework and Fluid Layout Transitions (P2.md)](P2.md)
 * [Phase 3: Dual-Theming Architecture, Dynamic Router, and SVG Canvas (P3.md)](P3.md)
 * [Phase 4: Anonymous Likes, Paginated Database Searches, and Caching Layers (P4.md)](P4.md)
+* [Phase 5: Dynamic OpenGraph Image Generation, Metadata Base Resolution, and Rich Social Previews (P5.md)](P5.md)
 
 ---
 
@@ -37,8 +38,8 @@ flowchart TB
     end
 
     subgraph AI [Workers AI Compute Isolation]
-        BGE[@cf/baai/bge-base-en-v1.5]
-        Llama[@cf/meta/llama-3-8b-instruct]
+        BGE["@cf/baai/bge-base-en-v1.5"]
+        Llama["@cf/meta/llama-3-8b-instruct"]
     end
 
     subgraph Data [Persistent Database Isolation]
@@ -143,6 +144,15 @@ Phase 4, detailed in [P4.md](P4.md), introduced high-performance optimization la
   }
   ```
   The Worker validates this header to authorize the Next.js server-side render dynamically.
+
+### Phase 5: Dynamic OpenGraph Image Generation, Metadata Base Resolution, and Rich Social Previews
+
+Phase 5, detailed in [P5.md](P5.md), implemented dynamic image generation and metadata configurations to deliver rich link previews on social platforms.
+
+* **Dynamic OpenGraph Image Generation (Edge Runtime):** Built dynamic image renderers for the root route (`src/app/opengraph-image.tsx`) and dynamic quote details page (`src/app/quote/[slug]/opengraph-image.tsx`) using Satori and Next.js `ImageResponse` running on the edge.
+* **Ambient Accent Color Rendering:** Dynamically retrieves quote records, adjusts typography sizes to avoid clipping, and builds custom radial ambient glow gradients matching each quote's unique database-assigned accent color.
+* **Canonical Metadata Base Resolution:** Configured `metadataBase` in the root layout (`src/app/layout.tsx`) pointing to `https://words.harshrb.in` to allow crawlers (WhatsApp, Twitter, Slack, Telegram) to resolve relative og:image links into absolute URLs.
+* **Social Metatags Tuning:** Enriched dynamic Page Metadata in `quote/[slug]/page.tsx` with absolute overrides, article details, and `summary_large_image` Twitter structures.
 
 ---
 

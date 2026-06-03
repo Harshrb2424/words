@@ -118,10 +118,10 @@ export default function QuotesArchive({ initialQuotes }: QuotesArchiveProps) {
         {/* Intro Hero Section */}
         <section className="mb-12 text-center sm:text-left">
           <h2 className="mt-4 font-serif text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            A sanctuary for quiet thoughts.
+            Save and organize quotes, highlights, and book notes.
           </h2>
           <p className="mt-3 max-w-2xl text-base text-foreground/75 leading-relaxed">
-            Words compiles scattered screenshots, highlights, and book excerpts into a beautifully indexed, relational database. Powered by Cloudflare Workers AI for context enrichment and fuzzy duplicate detection.
+            Words helps you build a searchable knowledge library from screenshots, reading highlights, book excerpts, and memorable ideas.
           </p>
         </section>
 
