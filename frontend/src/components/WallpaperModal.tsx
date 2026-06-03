@@ -59,6 +59,18 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
   const [showLanguage, setShowLanguage] = useState(false);
   const [showIndex, setShowIndex] = useState(false);
   const [showWatermark, setShowWatermark] = useState(true);
+
+  // New options: Padding, Font scaling, background image, and filters
+  const [paddingPercent, setPaddingPercent] = useState(10);
+  const [fontScale, setFontScale] = useState(100);
+  const [bgImageUrl, setBgImageUrl] = useState("");
+  const [loadedBgImage, setLoadedBgImage] = useState<HTMLImageElement | null>(null);
+  const [imageLoadError, setImageLoadError] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(false);
+  const [blurAmount, setBlurAmount] = useState(0);
+  const [brightnessAmount, setBrightnessAmount] = useState(100);
+  const [grayscaleAmount, setGrayscaleAmount] = useState(0);
+  const [sepiaAmount, setSepiaAmount] = useState(0);
   
   // Preset dimensions
   useEffect(() => {
@@ -100,6 +112,58 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
     }
   }, [preset]);
 
+  // Load background image from URL with CORS settings
+  useEffect(() => {
+    if (!bgImageUrl.trim()) {
+      setLoadedBgImage(null);
+      setImageLoadError(false);
+      setIsImageLoading(false);
+      return;
+    }
+
+    setIsImageLoading(true);
+    setImageLoadError(false);
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = bgImageUrl.trim();
+
+    img.onload = () => {
+      setLoadedBgImage(img);
+      setImageLoadError(false);
+      setIsImageLoading(false);
+    };
+
+    img.onerror = () => {
+      setLoadedBgImage(null);
+      setImageLoadError(true);
+      setIsImageLoading(false);
+    };
+  }, [bgImageUrl]);
+
+  // Reset customization options when modal is closed
+  useEffect(() => {
+    if (!isOpen) {
+      setPreset("phone-hd");
+      setThemeMode("old-book");
+      setShowAuthor(true);
+      setShowSource(true);
+      setShowLanguage(false);
+      setShowIndex(false);
+      setShowWatermark(true);
+      setPaddingPercent(10);
+      setFontScale(100);
+      setBgImageUrl("");
+      setLoadedBgImage(null);
+      setImageLoadError(false);
+      setIsImageLoading(false);
+      setBlurAmount(0);
+      setBrightnessAmount(100);
+      setGrayscaleAmount(0);
+      setSepiaAmount(0);
+    }
+  }, [isOpen]);
+
   // Redraw canvas whenever options change
   useEffect(() => {
     if (!isOpen) return;
@@ -120,7 +184,14 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
     showLanguage,
     showIndex,
     showWatermark,
-    quote
+    quote,
+    loadedBgImage,
+    blurAmount,
+    brightnessAmount,
+    grayscaleAmount,
+    sepiaAmount,
+    fontScale,
+    paddingPercent
   ]);
 
   const drawWallpaper = () => {
@@ -162,9 +233,57 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
       borderLine = `rgba(${r}, ${g}, ${b}, 0.35)`;
     }
 
-    // 1. Draw Background
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, width, height);
+    // Override colors for background image layout
+    if (loadedBgImage) {
+      textPrimary = "#ffffff";
+      textSecondary = "#e4e4e7";
+      borderLine = "rgba(255, 255, 255, 0.3)";
+    }
+
+    // 1. Draw Background Image or Solid Color
+    if (loadedBgImage) {
+      // Clear with dark fill to prevent flash or border light leak
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.save();
+      // Apply filters (blur, brightness/dim, grayscale, sepia)
+      let filterParts = [];
+      if (blurAmount > 0) filterParts.push(`blur(${blurAmount}px)`);
+      if (brightnessAmount < 100) filterParts.push(`brightness(${brightnessAmount}%)`);
+      if (grayscaleAmount > 0) filterParts.push(`grayscale(${grayscaleAmount}%)`);
+      if (sepiaAmount > 0) filterParts.push(`sepia(${sepiaAmount}%)`);
+      
+      if (filterParts.length > 0) {
+        ctx.filter = filterParts.join(" ");
+      }
+
+      // Draw background image as cover
+      const imgWidth = loadedBgImage.width;
+      const imgHeight = loadedBgImage.height;
+      const canvasRatio = width / height;
+      const imgRatio = imgWidth / imgHeight;
+
+      let sWidth = imgWidth;
+      let sHeight = imgHeight;
+      let sx = 0;
+      let sy = 0;
+
+      if (imgRatio > canvasRatio) {
+        sWidth = imgHeight * canvasRatio;
+        sx = (imgWidth - sWidth) / 2;
+      } else {
+        sHeight = imgWidth / canvasRatio;
+        sy = (imgHeight - sHeight) / 2;
+      }
+
+      ctx.drawImage(loadedBgImage, sx, sy, sWidth, sHeight, 0, 0, width, height);
+      ctx.restore();
+      ctx.filter = "none";
+    } else {
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, width, height);
+    }
 
     // 2. Draw subtle border frame
     const margin = Math.min(width, height) * 0.05; // 5% of smaller dimension
@@ -174,11 +293,12 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
 
     // 3. Typographical setup
     const isPortrait = height > width;
-    const padding = margin * 2;
-    const maxContentWidth = width - padding * 2;
+    const paddingX = width * (paddingPercent / 100);
+    const maxContentWidth = width - paddingX * 2;
     
-    // Scale font size based on wallpaper size
-    const quoteFontSize = Math.max(24, Math.floor(Math.min(width, height) * (isPortrait ? 0.045 : 0.038)));
+    // Scale font size based on wallpaper size & font scale factor
+    const baseFontSize = Math.max(24, Math.floor(Math.min(width, height) * (isPortrait ? 0.045 : 0.038)));
+    const quoteFontSize = Math.floor(baseFontSize * (fontScale / 100));
     const authorFontSize = Math.max(16, Math.floor(quoteFontSize * 0.65));
     const metaFontSize = Math.max(12, Math.floor(quoteFontSize * 0.45));
 
@@ -265,7 +385,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
     if (showIndex) {
       ctx.font = `500 ${metaFontSize}px monospace`;
       ctx.fillStyle = textSecondary;
-      ctx.fillText(`#000${quote.id}`, width / 2, margin + padding / 2);
+      ctx.fillText(`#000${quote.id}`, width / 2, margin + margin / 2);
     }
 
     // 9. Draw Watermark
@@ -273,7 +393,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
       ctx.font = `bold tracking-widest ${metaFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
       ctx.fillStyle = textSecondary;
       ctx.globalAlpha = 0.55;
-      ctx.fillText("words.harshrb.in", width / 2, height - margin - padding / 2);
+      ctx.fillText("words.harshrb.in", width / 2, height - margin - margin / 2);
       ctx.globalAlpha = 1.0;
     }
   };
@@ -299,7 +419,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/50 backdrop-blur-xs">
       <div 
-        className="relative w-full max-w-5xl h-[85vh] md:h-[80vh] flex flex-col md:flex-row overflow-hidden rounded-3xl border border-border-custom bg-card-custom shadow-2xl animate-fade-in"
+        className="relative w-full max-w-5xl h-[90vh] md:h-[80vh] flex flex-col md:flex-row overflow-hidden rounded-3xl border border-border-custom bg-card-custom shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
@@ -310,14 +430,14 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
           <X className="h-5 w-5" />
         </button>
 
-        {/* Left Side: Live Canvas Preview */}
-        <div className="flex-1 bg-background/30 p-6 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-border-custom overflow-hidden">
+        {/* Left Side: Live Canvas Preview - Fixed height on mobile, fluid on desktop */}
+        <div className="h-[280px] md:h-auto md:flex-1 bg-background/30 p-4 md:p-6 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-border-custom overflow-hidden shrink-0">
           <span className="text-[10px] font-bold tracking-widest uppercase text-foreground/45 mb-3 flex items-center gap-1.5">
             <Eye className="h-3.5 w-3.5" />
             Preview
           </span>
 
-          <div className="relative flex-1 w-full flex items-center justify-center overflow-hidden max-h-[45vh] md:max-h-[60vh]">
+          <div className="relative flex-1 w-full flex items-center justify-center overflow-hidden max-h-[200px] md:max-h-[60vh]">
             <canvas 
               ref={canvasRef} 
               className="max-h-full max-w-full rounded-lg border border-border-custom shadow-lg object-contain bg-zinc-100 dark:bg-zinc-900 transition-all duration-300"
@@ -346,8 +466,9 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
               
               <div className="grid grid-cols-2 gap-2">
                 <button
+                  type="button"
                   onClick={() => setPreset("phone-hd")}
-                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 rounded-xl border p-2 text-xs font-semibold cursor-pointer transition-all ${
                     preset === "phone-hd"
                       ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
                       : "border-border-custom hover:border-zinc-400 text-foreground"
@@ -361,8 +482,9 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setPreset("pc-fhd")}
-                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 rounded-xl border p-2 text-xs font-semibold cursor-pointer transition-all ${
                     preset === "pc-fhd"
                       ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
                       : "border-border-custom hover:border-zinc-400 text-foreground"
@@ -376,8 +498,9 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setPreset("phone-4k")}
-                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 rounded-xl border p-2 text-xs font-semibold cursor-pointer transition-all ${
                     preset === "phone-4k"
                       ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
                       : "border-border-custom hover:border-zinc-400 text-foreground"
@@ -391,8 +514,9 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setPreset("pc-4k")}
-                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 rounded-xl border p-2 text-xs font-semibold cursor-pointer transition-all ${
                     preset === "pc-4k"
                       ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
                       : "border-border-custom hover:border-zinc-400 text-foreground"
@@ -406,8 +530,9 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setPreset("insta-square")}
-                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 rounded-xl border p-2 text-xs font-semibold cursor-pointer transition-all ${
                     preset === "insta-square"
                       ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
                       : "border-border-custom hover:border-zinc-400 text-foreground"
@@ -415,14 +540,15 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                 >
                   <InstagramIcon className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-455" />
                   <div className="text-left">
-                    <span className="block font-bold">Insta Square</span>
+                    <span className="block">Insta Square</span>
                     <span className="text-[9px] opacity-70">1080 x 1080</span>
                   </div>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setPreset("insta-portrait")}
-                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 rounded-xl border p-2 text-xs font-semibold cursor-pointer transition-all ${
                     preset === "insta-portrait"
                       ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
                       : "border-border-custom hover:border-zinc-400 text-foreground"
@@ -436,8 +562,9 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setPreset("twitter-post")}
-                  className={`flex items-center gap-2 rounded-xl border p-2.5 text-xs font-semibold cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 rounded-xl border p-2 text-xs font-semibold cursor-pointer transition-all col-span-2 ${
                     preset === "twitter-post"
                       ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
                       : "border-border-custom hover:border-zinc-400 text-foreground"
@@ -445,8 +572,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                 >
                   <TwitterIcon className="h-4 w-4 shrink-0 text-sky-500" />
                   <div className="text-left">
-                    <span className="block">Twitter/X Post</span>
-                    <span className="text-[9px] opacity-70">1200 x 675</span>
+                    <span className="block">Twitter/X Post (1200 x 675)</span>
                   </div>
                 </button>
               </div>
@@ -480,64 +606,238 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
               </div>
             </div>
 
-            {/* Aesthetics Wallpaper Theme */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold tracking-widest uppercase text-foreground/60 flex items-center gap-1.5">
-                <Settings className="h-3 w-3" />
-                Color Theme
+            {/* Typography Sliders */}
+            <div className="space-y-3 pt-4 border-t border-dashed border-border-custom">
+              <label className="text-[10px] font-bold tracking-widest uppercase text-foreground/60 block">
+                Typography Controls
               </label>
-              
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => setThemeMode("old-book")}
-                  className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
-                    themeMode === "old-book"
-                      ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
-                      : "border-border-custom hover:border-zinc-400 text-foreground"
-                  }`}
-                >
-                  Old Book
-                </button>
-                <button
-                  onClick={() => setThemeMode("midnight")}
-                  className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
-                    themeMode === "midnight"
-                      ? "border-zinc-600 bg-zinc-950 text-white shadow-xs"
-                      : "border-border-custom hover:border-zinc-400 text-foreground"
-                  }`}
-                >
-                  Midnight
-                </button>
-                <button
-                  onClick={() => setThemeMode("sage")}
-                  className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
-                    themeMode === "sage"
-                      ? "border-emerald-600/50 bg-emerald-50/20 text-emerald-800"
-                      : "border-border-custom hover:border-zinc-400 text-foreground"
-                  }`}
-                >
-                  Sage
-                </button>
-                <button
-                  onClick={() => setThemeMode("aura")}
-                  style={{
-                    borderColor: themeMode === "aura" ? (quote.color || "#d97706") : undefined,
-                    backgroundColor: themeMode === "aura" ? `rgba(${parseInt((quote.color || "#d97706").substring(1,3), 16) || 217}, ${parseInt((quote.color || "#d97706").substring(3,5), 16) || 119}, ${parseInt((quote.color || "#d97706").substring(5,7), 16) || 6}, 0.15)` : undefined,
-                    color: themeMode === "aura" ? (quote.color || "#d97706") : undefined
-                  }}
-                  className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
-                    themeMode === "aura"
-                      ? ""
-                      : "border-border-custom hover:border-zinc-400 text-foreground"
-                  }`}
-                >
-                  Aura
-                </button>
+
+              <div className="space-y-3">
+                {/* Font Size Scale */}
+                <div>
+                  <div className="flex justify-between text-[11px] font-medium text-foreground mb-1">
+                    <span>Font Size Scale</span>
+                    <span className="font-mono text-accent-custom">{fontScale}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="50"
+                    max="200"
+                    value={fontScale}
+                    onChange={(e) => setFontScale(Number(e.target.value))}
+                    className="w-full h-1 bg-border-custom rounded-lg appearance-none cursor-pointer accent-accent-custom"
+                  />
+                </div>
+
+                {/* Left/Right Padding Percentage Slider */}
+                <div>
+                  <div className="flex justify-between text-[11px] font-medium text-foreground mb-1">
+                    <span>Side Padding (Left / Right)</span>
+                    <span className="font-mono text-accent-custom">{paddingPercent}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="40"
+                    value={paddingPercent}
+                    onChange={(e) => setPaddingPercent(Number(e.target.value))}
+                    className="w-full h-1 bg-border-custom rounded-lg appearance-none cursor-pointer accent-accent-custom"
+                  />
+                </div>
               </div>
             </div>
 
+            {/* Background Image Options */}
+            <div className="space-y-3 pt-4 border-t border-dashed border-border-custom">
+              <label className="text-[10px] font-bold tracking-widest uppercase text-foreground/60 block">
+                Background Image Customizer
+              </label>
+
+              <div className="space-y-3">
+                <div>
+                  <span className="text-[9px] uppercase font-bold text-foreground/50 block mb-1">Image URL</span>
+                  <input
+                    type="text"
+                    value={bgImageUrl}
+                    onChange={(e) => setBgImageUrl(e.target.value)}
+                    placeholder="https://example.com/photo.jpg"
+                    className="w-full rounded-xl border border-border-custom bg-background/50 px-3 py-2 text-xs text-foreground placeholder-foreground/30 focus:outline-none focus:border-accent-custom transition-all"
+                  />
+                </div>
+
+                {/* Pre-configured Presets */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[9px] uppercase font-bold text-foreground/45">Presets:</span>
+                  <button
+                    type="button"
+                    onClick={() => setBgImageUrl("https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=80")}
+                    className="text-[10px] bg-background/50 hover:bg-accent-bg-custom/40 border border-border-custom rounded-lg px-2 py-0.5 text-foreground/80 hover:text-accent-custom transition-all cursor-pointer font-medium"
+                  >
+                    Mountains
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBgImageUrl("https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=1200&q=80")}
+                    className="text-[10px] bg-background/50 hover:bg-accent-bg-custom/40 border border-border-custom rounded-lg px-2 py-0.5 text-foreground/80 hover:text-accent-custom transition-all cursor-pointer font-medium"
+                  >
+                    Forest
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBgImageUrl("https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?w=1200&q=80")}
+                    className="text-[10px] bg-background/50 hover:bg-accent-bg-custom/40 border border-border-custom rounded-lg px-2 py-0.5 text-foreground/80 hover:text-accent-custom transition-all cursor-pointer font-medium"
+                  >
+                    Stars
+                  </button>
+                  {bgImageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setBgImageUrl("")}
+                      className="text-[10px] border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 rounded-lg px-2 py-0.5 text-rose-500 transition-all cursor-pointer font-medium"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {isImageLoading && (
+                  <span className="text-[10px] text-accent-custom animate-pulse block">Loading background image...</span>
+                )}
+
+                {imageLoadError && (
+                  <span className="text-[10px] text-rose-500 block leading-tight">
+                    Failed to load image. Ensure the URL allows CORS sharing.
+                  </span>
+                )}
+
+                {loadedBgImage && (
+                  <div className="space-y-3 pt-1.5">
+                    {/* Blur Amount Slider */}
+                    <div>
+                      <div className="flex justify-between text-[11px] font-medium text-foreground mb-1">
+                        <span>Image Blur</span>
+                        <span className="font-mono text-accent-custom">{blurAmount}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="40"
+                        value={blurAmount}
+                        onChange={(e) => setBlurAmount(Number(e.target.value))}
+                        className="w-full h-1 bg-border-custom rounded-lg appearance-none cursor-pointer accent-accent-custom"
+                      />
+                    </div>
+
+                    {/* Overlay Darkness (derived via Brightness) */}
+                    <div>
+                      <div className="flex justify-between text-[11px] font-medium text-foreground mb-1">
+                        <span>Overlay Darkness (Dim)</span>
+                        <span className="font-mono text-accent-custom">{100 - brightnessAmount}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="20"
+                        max="100"
+                        value={brightnessAmount}
+                        onChange={(e) => setBrightnessAmount(Number(e.target.value))}
+                        className="w-full h-1 bg-border-custom rounded-lg appearance-none cursor-pointer accent-accent-custom"
+                      />
+                    </div>
+
+                    {/* Effect Filter Pills */}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setGrayscaleAmount(prev => prev === 100 ? 0 : 100)}
+                        className={`flex-1 py-1.5 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer ${
+                          grayscaleAmount > 0
+                            ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
+                            : "border-border-custom hover:border-zinc-400 text-foreground"
+                        }`}
+                      >
+                        Monochrome
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSepiaAmount(prev => prev === 100 ? 0 : 100)}
+                        className={`flex-1 py-1.5 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer ${
+                          sepiaAmount > 0
+                            ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
+                            : "border-border-custom hover:border-zinc-400 text-foreground"
+                        }`}
+                      >
+                        Sepia
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Aesthetics Wallpaper Theme */}
+            {!loadedBgImage && (
+              <div className="space-y-2 pt-4 border-t border-dashed border-border-custom">
+                <label className="text-[10px] font-bold tracking-widest uppercase text-foreground/60 flex items-center gap-1.5">
+                  <Settings className="h-3 w-3" />
+                  Color Theme
+                </label>
+                
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode("old-book")}
+                    className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
+                      themeMode === "old-book"
+                        ? "border-accent-custom bg-accent-bg-custom text-accent-custom"
+                        : "border-border-custom hover:border-zinc-400 text-foreground"
+                    }`}
+                  >
+                    Old Book
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode("midnight")}
+                    className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
+                      themeMode === "midnight"
+                        ? "border-zinc-600 bg-zinc-950 text-white shadow-xs"
+                        : "border-border-custom hover:border-zinc-400 text-foreground"
+                    }`}
+                  >
+                    Midnight
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode("sage")}
+                    className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
+                      themeMode === "sage"
+                        ? "border-emerald-600/50 bg-emerald-50/20 text-emerald-800"
+                        : "border-border-custom hover:border-zinc-400 text-foreground"
+                    }`}
+                  >
+                    Sage
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode("aura")}
+                    style={{
+                      borderColor: themeMode === "aura" ? (quote.color || "#d97706") : undefined,
+                      backgroundColor: themeMode === "aura" ? `rgba(${parseInt((quote.color || "#d97706").substring(1,3), 16) || 217}, ${parseInt((quote.color || "#d97706").substring(3,5), 16) || 119}, ${parseInt((quote.color || "#d97706").substring(5,7), 16) || 6}, 0.15)` : undefined,
+                      color: themeMode === "aura" ? (quote.color || "#d97706") : undefined
+                    }}
+                    className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
+                      themeMode === "aura"
+                        ? ""
+                        : "border-border-custom hover:border-zinc-400 text-foreground"
+                    }`}
+                  >
+                    Aura
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Toggle components (Author, source, index, lang, watermark) */}
-            <div className="space-y-3 pt-1 border-t border-dashed border-border-custom">
+            <div className="space-y-3 pt-4 border-t border-dashed border-border-custom">
               <label className="text-[10px] font-bold tracking-widest uppercase text-foreground/60 block">
                 Visible Provenance
               </label>

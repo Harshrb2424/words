@@ -153,6 +153,8 @@ Phase 5, detailed in [P5.md](P5.md), implemented dynamic image generation and me
 * **Ambient Accent Color Rendering:** Dynamically retrieves quote records, adjusts typography sizes to avoid clipping, and builds custom radial ambient glow gradients matching each quote's unique database-assigned accent color.
 * **Canonical Metadata Base Resolution:** Configured `metadataBase` in the root layout (`src/app/layout.tsx`) pointing to `https://words.harshrb.in` to allow crawlers (WhatsApp, Twitter, Slack, Telegram) to resolve relative og:image links into absolute URLs.
 * **Social Metatags Tuning:** Enriched dynamic Page Metadata in `quote/[slug]/page.tsx` with absolute overrides, article details, and `summary_large_image` Twitter structures.
+* **Whisper Quotes Batch Ingestion Flow:** Redesigned the creation modal to accept dynamic quote lists. Automatically detects and batch submits to `POST /api/quotes/bulk` on Cloudflare Workers. Features a 6-step progress pipeline tracker mapped exactly to backend endpoints (RAG Search, Llama 3 Cleanup, Embedding Generation, Vectorize Deduplication Scan, D1 relational commit, and Vectorize upsert) with live error highlighting.
+* **Wallpaper Studio Image & Canvas Upgrades:** Optimizes canvas preview heights for small viewports to maintain mobile scrollability. Adds a customizable side padding slider (`0%` to `40%`), font-scale multiplier (`50%` to `200%`), background image URL loading with CORS allowance, crop-cover scaling, and native filters (Blur, Overlay Dimming, Grayscale, and Sepia).
 
 ---
 
