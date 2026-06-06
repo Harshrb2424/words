@@ -11,6 +11,7 @@ binding = "DB"
 database_name = "quote-db"
 # database_id = "quote-db" # Local / Placeholder dev database ID
 database_id = "f01db144-0483-4eb5-ba85-247509c8648c"
+remote = true
 
 [[vectorize]]
 binding = "VECTORIZE"

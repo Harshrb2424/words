@@ -12,7 +12,7 @@ export interface Env {
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, x-words-internal",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -37,7 +37,7 @@ export default {
     const url = new URL(request.url);
 
     // Public Homepage API restriction check
-    const isHomepageApi = (url.pathname === "/api/quotes" || url.pathname === "/") && request.method === "GET";
+    const isHomepageApi = (url.pathname === "/api/quotes" || url.pathname === "/quotes" || url.pathname === "/") && request.method === "GET";
 
     if (!isHomepageApi) {
       const origin = request.headers.get("Origin") || "";
@@ -83,7 +83,7 @@ export default {
 
     // Check in-memory cache for GET requests
     const cacheKey = `${request.method}:${url.pathname}:${url.search}`;
-    if (request.method === "GET" && !url.pathname.includes("/api/quotes/bulk")) {
+    if (request.method === "GET" && !url.pathname.includes("/api/quotes/bulk") && !url.pathname.includes("/quotes/bulk")) {
       const cached = readCache.get(cacheKey);
       if (cached && cached.expiry > Date.now()) {
         console.log(`Cache HIT for key: ${cacheKey}`);
@@ -103,7 +103,7 @@ export default {
     const response = await this.handleActualFetch(request, env, ctx, url);
 
     // Cache successful GET responses for 1 hour
-    if (request.method === "GET" && response.status === 200 && !url.pathname.includes("/api/quotes/bulk")) {
+    if (request.method === "GET" && response.status === 200 && !url.pathname.includes("/api/quotes/bulk") && !url.pathname.includes("/quotes/bulk")) {
       const clone = response.clone();
       ctx.waitUntil((async () => {
         try {
@@ -131,7 +131,7 @@ export default {
   async handleActualFetch(request: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
     try {
       // Route routing
-      if (url.pathname === "/api/quotes" || url.pathname === "/") {
+      if (url.pathname === "/api/quotes" || url.pathname === "/quotes" || url.pathname === "/") {
         if (request.method === "GET") {
           return await handleGetQuotes(env, url);
         } else if (request.method === "POST") {
@@ -145,7 +145,7 @@ export default {
       }
 
       // Bulk quotes creation
-      if (url.pathname === "/api/quotes/bulk") {
+      if (url.pathname === "/api/quotes/bulk" || url.pathname === "/quotes/bulk") {
         if (request.method === "POST") {
           return await handleBulkPostQuotes(request, env);
         } else {
@@ -168,10 +168,11 @@ export default {
         }
       }
 
-      // Liking quote: POST /api/quotes/:id/like
-      if (url.pathname.startsWith("/api/quotes/") && url.pathname.endsWith("/like")) {
+      // Liking quote: POST /api/quotes/:id/like or /quotes/:id/like
+      if ((url.pathname.startsWith("/api/quotes/") || url.pathname.startsWith("/quotes/")) && url.pathname.endsWith("/like")) {
         const parts = url.pathname.split("/");
-        const idStr = parts[3];
+        const likeIdx = parts.indexOf("like");
+        const idStr = likeIdx > 0 ? parts[likeIdx - 1] : "";
         const id = idStr ? parseInt(idStr) : NaN;
         if (isNaN(id)) {
           return new Response(JSON.stringify({ error: "Invalid ID for liking" }), {
@@ -191,7 +192,7 @@ export default {
       }
 
       // Single quote retrieval by ID
-      if (url.pathname.startsWith("/api/quotes/")) {
+      if (url.pathname.startsWith("/api/quotes/") || url.pathname.startsWith("/quotes/")) {
         const idStr = url.pathname.split("/").pop();
         const id = idStr ? parseInt(idStr) : NaN;
         if (isNaN(id)) {
@@ -480,6 +481,7 @@ WEB SEARCH RESULTS CONTEXT:
 ${webSearchContext}
 
 Rules for "cleaned_text":
+- Extract ONLY the core quote spoken/written words. Do NOT include any prefixes, suffixes, annotations, or attributions (such as language names like "Japanese:", author names, book titles, episode numbers, or source references like "Monkey D. Luffy" or "One Piece Episode 1051").
 - Correct spelling, grammar, and capitalization (e.g. if the input is "i just miss you and want to be with you", format it as "I just miss you and want to be with you.").
 - Do NOT wrap the cleaned text in outer quotation marks (e.g., use 'Life is beautiful.' instead of '"Life is beautiful."').
 - Preserve elegant poem-like linebreaks if they add poetic value, but ensure every line is grammatically polished with correct syntax.
@@ -511,15 +513,31 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
     llmData = parseRobustJSON(rawResponse);
   } catch (err: any) {
     console.error("LLM enrichment and cleanup failed. Using fallback metadata:", err);
+    const fallbackInfo = fallbackParseRawText(rawText);
     llmData = {
-      author: "Unknown",
-      source: "Unknown",
-      language: "English",
+      author: fallbackInfo.author,
+      source: fallbackInfo.source,
+      language: fallbackInfo.language,
       ai_context: "This quote invites deep reflection on the nature of existence and the quiet spaces within human experience.",
       tags: ["Reflection", "Wisdom", "Existential"],
-      cleaned_text: rawText,
+      cleaned_text: fallbackInfo.cleanedText,
       color: "#d97706",
     };
+  }
+
+  // Cross-verify and merge with deterministic fallback parser to strip metadata if LLM failed to clean
+  const fallbackInfo = fallbackParseRawText(rawText);
+  if (llmData.author === "Unknown" && fallbackInfo.author !== "Unknown") {
+    llmData.author = fallbackInfo.author;
+  }
+  if (llmData.source === "Unknown" && fallbackInfo.source !== "Unknown") {
+    llmData.source = fallbackInfo.source;
+  }
+  if ((!llmData.cleaned_text || llmData.cleaned_text === rawText) && fallbackInfo.cleanedText !== rawText) {
+    llmData.cleaned_text = fallbackInfo.cleanedText;
+  }
+  if (llmData.language === "English" && fallbackInfo.language !== "English") {
+    llmData.language = fallbackInfo.language;
   }
 
   // Finalize cleaned text (remove outer quotes just in case)
@@ -771,7 +789,7 @@ async function handleBulkPostQuotes(request: Request, env: Env): Promise<Respons
       if (result.success) {
         successful++;
         results.push({
-          quote_text: quoteText,
+          quote_text: result.quote.quote_text,
           status: "success",
           quote: result.quote,
         });
@@ -971,9 +989,16 @@ Do NOT return any JSON, metadata, explanation or surrounding double-quotes. Just
 function parseRobustJSON(text: string): QuoteMetadata {
   let cleaned = text.trim();
 
-  // Remove markdown code blocks if the LLM wrapped it in ```json ... ```
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  // Extract JSON object substring between the first '{' and the last '}'
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  } else {
+    // Remove markdown code blocks if the LLM wrapped it in ```json ... ```
+    if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    }
   }
 
   try {
@@ -982,11 +1007,12 @@ function parseRobustJSON(text: string): QuoteMetadata {
     console.warn("Standard JSON parsing failed. Attempting regular expression regex fallback extraction on:", cleaned);
     
     // Fallback using manual regex extraction
-    const authorMatch = cleaned.match(/"author"\s*:\s*"([^"]+)"/);
-    const sourceMatch = cleaned.match(/"source"\s*:\s*"([^"]+)"/);
-    const langMatch = cleaned.match(/"language"\s*:\s*"([^"]+)"/);
-    const contextMatch = cleaned.match(/"ai_context"\s*:\s*"([^"]+)"/);
-    const cleanedTextMatch = cleaned.match(/"cleaned_text"\s*:\s*"([^"]+)"/);
+    const authorMatch = cleaned.match(/"author"\s*:\s*"([^"]*)"/);
+    const sourceMatch = cleaned.match(/"source"\s*:\s*"([^"]*)"/);
+    const langMatch = cleaned.match(/"language"\s*:\s*"([^"]*)"/);
+    const contextMatch = cleaned.match(/"ai_context"\s*:\s*"([^"]*)"/);
+    const cleanedTextMatch = cleaned.match(/"cleaned_text"\s*:\s*"([^"]*)"/);
+    const colorMatch = cleaned.match(/"color"\s*:\s*"([^"]*)"/);
     
     // Extract tags array
     let tags: string[] = [];
@@ -998,17 +1024,112 @@ function parseRobustJSON(text: string): QuoteMetadata {
         .filter(t => t.length > 0);
     }
 
-    if (contextMatch && contextMatch[1]) {
-      return {
-        author: authorMatch ? authorMatch[1] : "Unknown",
-        source: sourceMatch ? sourceMatch[1] : "Unknown",
-        language: langMatch ? langMatch[1] : "English",
-        ai_context: contextMatch[1],
-        tags: tags.length > 0 ? tags : ["Reflection", "Wisdom"],
-        cleaned_text: cleanedTextMatch ? cleanedTextMatch[1] : undefined,
-      };
-    }
-
-    throw new Error("Could not parse LLM response as JSON even with fallback regex.");
+    return {
+      author: (authorMatch && authorMatch[1]) ? authorMatch[1] : "Unknown",
+      source: (sourceMatch && sourceMatch[1]) ? sourceMatch[1] : "Unknown",
+      language: (langMatch && langMatch[1]) ? langMatch[1] : "English",
+      ai_context: (contextMatch && contextMatch[1]) ? contextMatch[1] : "This quote invites deep reflection on the nature of existence and the quiet spaces within human experience.",
+      tags: tags.length > 0 ? tags : ["Reflection", "Wisdom"],
+      cleaned_text: (cleanedTextMatch && cleanedTextMatch[1]) ? cleanedTextMatch[1] : undefined,
+      color: (colorMatch && colorMatch[1]) ? colorMatch[1] : "#d97706",
+    };
   }
+}
+
+/**
+ * Helper to segment attribution string into author and source components.
+ */
+function parseAttribution(attr: string) {
+  let author = "Unknown";
+  let source = "Unknown";
+
+  const inMatch = attr.match(/^(.*?)\s+(?:in|from)\s+(.*)$/i);
+  if (inMatch) {
+    author = inMatch[1].trim();
+    source = inMatch[2].trim();
+  } else {
+    const words = attr.split(/\s+/);
+    if (words.length >= 3) {
+      let nameWords: string[] = [];
+      let sourceWords: string[] = [];
+      let foundNonName = false;
+      
+      for (let i = words.length - 1; i >= 0; i--) {
+        const word = words[i];
+        const isCapitalized = /^[A-Z]/.test(word);
+        if (isCapitalized && !foundNonName && nameWords.length < 3) {
+          nameWords.unshift(word);
+        } else {
+          foundNonName = true;
+          sourceWords.unshift(word);
+        }
+      }
+      
+      if (nameWords.length >= 2) {
+        author = nameWords.join(" ");
+        source = sourceWords.join(" ");
+      } else {
+        author = attr;
+      }
+    } else {
+      author = attr;
+    }
+  }
+
+  if (source === "Unknown" || source.trim() === "") {
+    source = "Unknown";
+  }
+  return { author, source };
+}
+
+/**
+ * Deterministic fallback parser to extract quote text, author, source, and language
+ * from raw text in case the LLM fails or misses parsing metadata out of the quote body.
+ */
+function fallbackParseRawText(rawText: string) {
+  let cleanedText = rawText.trim();
+  let author = "Unknown";
+  let source = "Unknown";
+  let language = "English";
+
+  // 1. Check if there's a language prefix like "Japanese:" or "Hindi:"
+  const langPrefixMatch = cleanedText.match(/^(English|Japanese|Hindi|Hinglish|Spanish|French|German):\s*(.*)/i);
+  if (langPrefixMatch) {
+    language = langPrefixMatch[1].charAt(0).toUpperCase() + langPrefixMatch[1].slice(1).toLowerCase();
+    cleanedText = langPrefixMatch[2].trim();
+  }
+
+  // 2. Check for quote marks and text after them
+  // e.g. "Quote text" Source Author (only matching double/smart quotes to prevent single-quote word conflicts)
+  const quotedMatch = cleanedText.match(/^[“"\u201c](.*?)[”"\u201d]\s*(.*)$/s);
+  if (quotedMatch) {
+    cleanedText = quotedMatch[1].trim();
+    const rest = quotedMatch[2].trim();
+    if (rest) {
+      const attr = rest.replace(/^[-–—\s]+/, "").trim();
+      const parsed = parseAttribution(attr);
+      author = parsed.author;
+      source = parsed.source;
+    }
+  } else {
+    // 3. Check for dash pattern: "Quote text -Author" or "Quote text - Author"
+    const dashMatch = cleanedText.match(/^(.*?)\s*[-–—]\s*([^-–—]+)$/s);
+    if (dashMatch) {
+      cleanedText = dashMatch[1].trim();
+      const rest = dashMatch[2].trim();
+      const parsed = parseAttribution(rest);
+      author = parsed.author;
+      source = parsed.source;
+    }
+  }
+
+  // Remove any surrounding quotes from cleanedText
+  cleanedText = cleanedText.replace(/^[“"'\u201c\u201d]|[”"'\u201c\u201d]$/g, "").trim();
+
+  return {
+    cleanedText,
+    author,
+    source,
+    language,
+  };
 }
