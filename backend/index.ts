@@ -400,14 +400,80 @@ async function handleDeleteQuote(id: number, env: Env): Promise<Response> {
  * 5. Insert enriched quote to Cloudflare D1
  * 6. Store vector embedding in Cloudflare Vectorize
  */
+const AESTHETIC_COLORS = [
+  "#d97706", // Amber
+  "#2563eb", // Blue
+  "#db2777", // Pink
+  "#059669", // Emerald
+  "#7c3aed", // Violet
+  "#ea580c", // Orange
+  "#0891b2", // Cyan
+  "#4f46e5", // Indigo
+  "#be185d", // Rose
+  "#9333ea", // Purple
+];
+
+function isUnknown(val: string | null | undefined): boolean {
+  if (!val) return true;
+  const cleaned = val.trim().toLowerCase();
+  return (
+    cleaned === "" ||
+    cleaned === "unknown" ||
+    cleaned === "anonymous" ||
+    cleaned === "n/a" ||
+    cleaned === "none" ||
+    cleaned === "null" ||
+    cleaned === "undefined" ||
+    cleaned === "unknown author" ||
+    cleaned === "unknown source"
+  );
+}
+
+function normalizeColor(text: string, colorInput?: string | null): string {
+  if (colorInput) {
+    let clean = colorInput.trim();
+    if (!clean.startsWith("#") && /^[0-9A-Fa-f]{6}$/.test(clean)) {
+      clean = "#" + clean;
+    }
+    if (/^#[0-9A-Fa-f]{6}$/.test(clean)) {
+      return clean;
+    }
+  }
+  
+  // Deterministic hash-based selection if color is missing/invalid
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = text.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AESTHETIC_COLORS.length;
+  return AESTHETIC_COLORS[index];
+}
+
+function decodeHTMLEntities(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&ndash;/g, '-')
+    .replace(/&mdash;/g, '-')
+    .replace(/&nbsp;/g, ' ');
+}
+
 /**
-/**
- * Helper to perform a zero-dependency web search on DuckDuckGo HTML 
+ * Helper to perform a zero-dependency web search on Mojeek + Wikipedia
  * to fetch context snippets for a quote, resolving real authors and origins.
  */
 async function searchWeb(query: string): Promise<string> {
   try {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    // 1. Try Mojeek first
+    const searchUrl = `https://www.mojeek.com/search?q=${encodeURIComponent(query)}`;
     const response = await fetch(searchUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -415,37 +481,67 @@ async function searchWeb(query: string): Promise<string> {
       }
     });
 
-    if (!response.ok) {
-      console.warn(`DuckDuckGo Search returned status: ${response.status}`);
-      return "No web search results available.";
-    }
+    if (response.ok) {
+      const html = await response.text();
+      const snippets: string[] = [];
+      
+      // Extract infobox if present (very rich Wikipedia summary)
+      const infoboxRegex = /<div class="infobox[^>]*>([\s\S]*?)<\/div>/i;
+      const infoboxMatch = html.match(infoboxRegex);
+      if (infoboxMatch && infoboxMatch[1]) {
+        const cleanInfobox = infoboxMatch[1]
+          .replace(/<[^>]*>/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (cleanInfobox) {
+          snippets.push(`[Direct Entity Match]: ${cleanInfobox}`);
+        }
+      }
 
-    const html = await response.text();
-    
-    // Extract snippets with result__snippet class
-    const snippetRegex = /class="result__snippet"[^>]*>([\s\S]*?)<\//g;
-    const snippets: string[] = [];
-    let match;
-    let count = 0;
+      // Extract titles and snippets
+      const resultRegex = /<a class="title"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<p class="s">([\s\S]*?)<\/p>/gi;
+      let match;
+      let count = 0;
+      while ((match = resultRegex.exec(html)) !== null && count < 6) {
+        const title = match[1].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+        const snippet = match[2].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+        if (snippet) {
+          snippets.push(`[Result ${count + 1} - Title: ${title}]: ${snippet}`);
+          count++;
+        }
+      }
 
-    while ((match = snippetRegex.exec(html)) !== null && count < 6) {
-      const cleanSnippet = match[1]
-        .replace(/<[^>]*>/g, "") // Strip nested tags
-        .replace(/\s+/g, " ")    // Normalize whitespace
-        .trim();
-      if (cleanSnippet) {
-        snippets.push(cleanSnippet);
-        count++;
+      if (snippets.length > 0) {
+        return decodeHTMLEntities(snippets.join("\n\n"));
       }
     }
-
-    if (snippets.length === 0) {
-      return "No web search context matches found.";
+    
+    // 2. Fallback to Wikipedia Opensearch API
+    console.log("Mojeek search returned no results, falling back to Wikipedia Opensearch...");
+    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=3&namespace=0&format=json`;
+    const wikiResponse = await fetch(wikiUrl, {
+      headers: { "User-Agent": "WordsQuoteArchive/1.0" }
+    });
+    if (wikiResponse.ok) {
+      const data = await wikiResponse.json() as any[];
+      if (data && data[1] && data[1].length > 0) {
+        const wikiSnippets: string[] = [];
+        for (let i = 0; i < data[1].length; i++) {
+          const title = data[1][i];
+          const desc = data[2][i];
+          if (desc) {
+            wikiSnippets.push(`[Wikipedia - ${title}]: ${desc}`);
+          }
+        }
+        if (wikiSnippets.length > 0) {
+          return wikiSnippets.join("\n\n");
+        }
+      }
     }
-
-    return snippets.map((s, idx) => `[Result ${idx + 1}]: ${s}`).join("\n\n");
+    
+    return "No web search context matches found.";
   } catch (err: any) {
-    console.error("DuckDuckGo search fetch error:", err);
+    console.error("Search fetch error:", err);
     return `Search query failed: ${err.message || String(err)}`;
   }
 }
@@ -527,10 +623,10 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
 
   // Cross-verify and merge with deterministic fallback parser to strip metadata if LLM failed to clean
   const fallbackInfo = fallbackParseRawText(rawText);
-  if (llmData.author === "Unknown" && fallbackInfo.author !== "Unknown") {
+  if (isUnknown(llmData.author) && !isUnknown(fallbackInfo.author)) {
     llmData.author = fallbackInfo.author;
   }
-  if (llmData.source === "Unknown" && fallbackInfo.source !== "Unknown") {
+  if (isUnknown(llmData.source) && !isUnknown(fallbackInfo.source)) {
     llmData.source = fallbackInfo.source;
   }
   if ((!llmData.cleaned_text || llmData.cleaned_text === rawText) && fallbackInfo.cleanedText !== rawText) {
@@ -540,9 +636,21 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
     llmData.language = fallbackInfo.language;
   }
 
+  // Ensure fields are definitely not empty or "unknown" variants
+  if (isUnknown(llmData.author)) llmData.author = "Unknown";
+  if (isUnknown(llmData.source)) llmData.source = "Unknown";
+  if (!llmData.language) llmData.language = "English";
+  if (!llmData.ai_context) llmData.ai_context = "This quote invites deep reflection on the nature of existence.";
+  if (!llmData.tags || !Array.isArray(llmData.tags) || llmData.tags.length === 0) {
+    llmData.tags = ["Reflection", "Wisdom"];
+  }
+
   // Finalize cleaned text (remove outer quotes just in case)
   let finalizedText = (llmData.cleaned_text || rawText).trim();
   finalizedText = finalizedText.replace(/^["']|["']$/g, "").trim();
+
+  // Resolve and normalize the theme color
+  const resolvedColor = normalizeColor(finalizedText, llmData.color);
 
   // Step 2: Generate Vector Embedding of the finalized cleaned text
   let embedding: number[];
@@ -607,13 +715,13 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       finalizedText,
-      llmData.author || "Unknown",
-      llmData.source || "Unknown",
-      llmData.language || "English",
-      llmData.ai_context || "",
-      JSON.stringify(llmData.tags || []),
+      llmData.author,
+      llmData.source,
+      llmData.language,
+      llmData.ai_context,
+      JSON.stringify(llmData.tags),
       JSON.stringify(relatedQuoteIds),
-      llmData.color || null
+      resolvedColor
     ).run();
 
     if (!d1Result.meta || !d1Result.meta.last_row_id) {
@@ -662,7 +770,7 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
       ai_context: llmData.ai_context,
       tags: llmData.tags,
       related_quote_ids: relatedQuoteIds,
-      color: llmData.color || null,
+      color: resolvedColor,
     },
   };
 }
@@ -881,9 +989,11 @@ Do NOT return any JSON, metadata, explanation or surrounding double-quotes. Just
 
         console.log(`Polished ID ${quote.id}: "${polishedText.substring(0, 40)}..."`);
 
-        // Update D1 text
-        await env.DB.prepare("UPDATE quotes SET quote_text = ? WHERE id = ?")
-          .bind(polishedText, quote.id)
+        const resolvedColor = normalizeColor(polishedText, quote.color);
+
+        // Update D1 text and color
+        await env.DB.prepare("UPDATE quotes SET quote_text = ?, color = ? WHERE id = ?")
+          .bind(polishedText, resolvedColor, quote.id)
           .run();
 
         // Generate new embedding of the polished text
@@ -1043,12 +1153,29 @@ function parseAttribution(attr: string) {
   let author = "Unknown";
   let source = "Unknown";
 
-  const inMatch = attr.match(/^(.*?)\s+(?:in|from)\s+(.*)$/i);
+  let workingAttr = attr.trim();
+
+  // Extract parentheses source if present at the end, e.g. "Monkey D. Luffy (One Piece)"
+  const parenMatch = workingAttr.match(/^(.*?)\s*[([“](.*?)[)\]”]$/);
+  if (parenMatch) {
+    author = parenMatch[1].trim();
+    source = parenMatch[2].trim();
+    workingAttr = author;
+  }
+
+  // Check for "by" prefix, e.g. "by Monkey D. Luffy"
+  if (workingAttr.toLowerCase().startsWith("by ")) {
+    workingAttr = workingAttr.substring(3).trim();
+  }
+
+  const inMatch = workingAttr.match(/^(.*?)\s+(?:in|from)\s+(.*)$/i);
   if (inMatch) {
     author = inMatch[1].trim();
-    source = inMatch[2].trim();
-  } else {
-    const words = attr.split(/\s+/);
+    if (isUnknown(source)) {
+      source = inMatch[2].trim();
+    }
+  } else if (isUnknown(author)) {
+    const words = workingAttr.split(/\s+/);
     if (words.length >= 3) {
       let nameWords: string[] = [];
       let sourceWords: string[] = [];
@@ -1069,16 +1196,18 @@ function parseAttribution(attr: string) {
         author = nameWords.join(" ");
         source = sourceWords.join(" ");
       } else {
-        author = attr;
+        author = workingAttr;
       }
     } else {
-      author = attr;
+      author = workingAttr;
     }
+  } else {
+    author = workingAttr;
   }
 
-  if (source === "Unknown" || source.trim() === "") {
-    source = "Unknown";
-  }
+  if (isUnknown(author)) author = "Unknown";
+  if (isUnknown(source)) source = "Unknown";
+
   return { author, source };
 }
 
@@ -1100,26 +1229,36 @@ function fallbackParseRawText(rawText: string) {
   }
 
   // 2. Check for quote marks and text after them
-  // e.g. "Quote text" Source Author (only matching double/smart quotes to prevent single-quote word conflicts)
+  // e.g. "Quote text" Source Author
   const quotedMatch = cleanedText.match(/^[“"\u201c](.*?)[”"\u201d]\s*(.*)$/s);
   if (quotedMatch) {
     cleanedText = quotedMatch[1].trim();
     const rest = quotedMatch[2].trim();
     if (rest) {
-      const attr = rest.replace(/^[-–—\s]+/, "").trim();
+      const attr = rest.replace(/^[-–—~~\s]+/, "").trim();
       const parsed = parseAttribution(attr);
       author = parsed.author;
       source = parsed.source;
     }
   } else {
-    // 3. Check for dash pattern: "Quote text -Author" or "Quote text - Author"
-    const dashMatch = cleanedText.match(/^(.*?)\s*[-–—]\s*([^-–—]+)$/s);
+    // 3. Check for dash/tilde pattern: "Quote text -Author" or "Quote text ~ Author"
+    const dashMatch = cleanedText.match(/^(.*?)\s*[-–—~]\s*([^-–—~]+)$/s);
     if (dashMatch) {
       cleanedText = dashMatch[1].trim();
       const rest = dashMatch[2].trim();
       const parsed = parseAttribution(rest);
       author = parsed.author;
       source = parsed.source;
+    } else {
+      // 4. Check for colon pattern: "Author: Quote text"
+      const colonMatch = cleanedText.match(/^([^:\r\n]{3,30}):\s*(.*)$/s);
+      if (colonMatch) {
+        const possibleAuthor = colonMatch[1].trim();
+        if (/^[A-Za-z0-9\s.'’-]+$/.test(possibleAuthor)) {
+          author = possibleAuthor;
+          cleanedText = colonMatch[2].trim();
+        }
+      }
     }
   }
 
