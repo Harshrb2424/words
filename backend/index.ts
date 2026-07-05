@@ -516,14 +516,41 @@ async function searchWeb(query: string): Promise<string> {
       }
     }
     
-    // 2. Fallback to Wikipedia Opensearch API
-    console.log("Mojeek search returned no results, falling back to Wikipedia Opensearch...");
-    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=3&namespace=0&format=json`;
-    const wikiResponse = await fetch(wikiUrl, {
+    // 2. Fallback to Wikipedia Full-Text Search (robust for quotes as it searches page content)
+    console.log("Mojeek search returned no results, falling back to Wikipedia Full-Text Search...");
+    const wikiSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=&format=json&limit=3`;
+    const wikiResponse = await fetch(wikiSearchUrl, {
       headers: { "User-Agent": "WordsQuoteArchive/1.0" }
     });
+    
     if (wikiResponse.ok) {
-      const data = await wikiResponse.json() as any[];
+      const wikiData = await wikiResponse.json() as any;
+      if (wikiData?.query?.search && wikiData.query.search.length > 0) {
+        const wikiSnippets: string[] = [];
+        for (const item of wikiData.query.search) {
+          const title = item.title;
+          const snippet = item.snippet
+            .replace(/<[^>]*>/g, "") // strip searchmatch tags
+            .replace(/\s+/g, " ")
+            .trim();
+          if (snippet) {
+            wikiSnippets.push(`[Wikipedia - ${title}]: ${snippet}`);
+          }
+        }
+        if (wikiSnippets.length > 0) {
+          return wikiSnippets.join("\n\n");
+        }
+      }
+    }
+
+    // 3. Final fallback to Wikipedia Opensearch API (if full-text yielded nothing)
+    console.log("Wikipedia Full-Text Search yielded no results, falling back to Wikipedia Opensearch...");
+    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=3&namespace=0&format=json`;
+    const wikiOpenResponse = await fetch(wikiUrl, {
+      headers: { "User-Agent": "WordsQuoteArchive/1.0" }
+    });
+    if (wikiOpenResponse.ok) {
+      const data = await wikiOpenResponse.json() as any[];
       if (data && data[1] && data[1].length > 0) {
         const wikiSnippets: string[] = [];
         for (let i = 0; i < data[1].length; i++) {
@@ -617,7 +644,7 @@ Output MUST be strictly valid JSON. Do not write any markdown code block wrap, i
       ai_context: "This quote invites deep reflection on the nature of existence and the quiet spaces within human experience.",
       tags: ["Reflection", "Wisdom", "Existential"],
       cleaned_text: fallbackInfo.cleanedText,
-      color: "#d97706",
+      color: undefined,
     };
   }
 
@@ -883,38 +910,53 @@ async function handleBulkPostQuotes(request: Request, env: Env): Promise<Respons
     );
   }
 
-  console.log(`Processing bulk quote upload pipeline for ${rawQuotes.length} quotes...`);
+  // Cap the bulk input to a safe limit to prevent timeouts and Worker rate limits
+  const MAX_BULK_LIMIT = 5;
+  if (rawQuotes.length > MAX_BULK_LIMIT) {
+    return new Response(
+      JSON.stringify({ 
+        error: `Bad Request: Bulk upload is capped at a maximum of ${MAX_BULK_LIMIT} quotes per request to prevent gateway timeouts.` 
+      }),
+      {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      }
+    );
+  }
+
+  console.log(`Processing bulk quote upload pipeline for ${rawQuotes.length} quotes in parallel...`);
 
   const results: any[] = [];
   let successful = 0;
   let failed = 0;
 
-  for (const quoteText of rawQuotes) {
+  const processPromises = rawQuotes.map(async (quoteText) => {
     try {
       console.log(`Bulk processing item: "${quoteText.substring(0, 45)}..."`);
       const result = await processSingleQuote(quoteText, env);
-      
-      if (result.success) {
-        successful++;
-        results.push({
-          quote_text: result.quote.quote_text,
-          status: "success",
-          quote: result.quote,
-        });
-      } else {
-        failed++;
-        results.push({
-          quote_text: quoteText,
-          status: "failed",
-          error: result.error,
-        });
-      }
+      return { quoteText, success: true, result };
     } catch (err: any) {
-      failed++;
+      return { quoteText, success: false, error: err.message || String(err) };
+    }
+  });
+
+  const resolvedResults = await Promise.all(processPromises);
+
+  for (const res of resolvedResults) {
+    if (res.success && res.result && res.result.success) {
+      successful++;
       results.push({
-        quote_text: quoteText,
+        quote_text: res.result.quote.quote_text,
+        status: "success",
+        quote: res.result.quote,
+      });
+    } else {
+      failed++;
+      const errorMsg = res.success ? (res.result?.error || "Unknown error") : (res.error || "Unknown error");
+      results.push({
+        quote_text: res.quoteText,
         status: "failed",
-        error: err.message || String(err),
+        error: errorMsg,
       });
     }
   }
@@ -1116,13 +1158,23 @@ function parseRobustJSON(text: string): QuoteMetadata {
   } catch (e) {
     console.warn("Standard JSON parsing failed. Attempting regular expression regex fallback extraction on:", cleaned);
     
-    // Fallback using manual regex extraction
-    const authorMatch = cleaned.match(/"author"\s*:\s*"([^"]*)"/);
-    const sourceMatch = cleaned.match(/"source"\s*:\s*"([^"]*)"/);
-    const langMatch = cleaned.match(/"language"\s*:\s*"([^"]*)"/);
-    const contextMatch = cleaned.match(/"ai_context"\s*:\s*"([^"]*)"/);
-    const cleanedTextMatch = cleaned.match(/"cleaned_text"\s*:\s*"([^"]*)"/);
-    const colorMatch = cleaned.match(/"color"\s*:\s*"([^"]*)"/);
+    const unescapeJSONString = (str: string) => {
+      return str
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+        .replace(/\\\//g, '/')
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t');
+    };
+
+    // Fallback using manual regex extraction supporting escaped double quotes
+    const authorMatch = cleaned.match(/"author"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const sourceMatch = cleaned.match(/"source"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const langMatch = cleaned.match(/"language"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const contextMatch = cleaned.match(/"ai_context"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const cleanedTextMatch = cleaned.match(/"cleaned_text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const colorMatch = cleaned.match(/"color"\s*:\s*"((?:[^"\\]|\\.)*)"/);
     
     // Extract tags array
     let tags: string[] = [];
@@ -1135,13 +1187,13 @@ function parseRobustJSON(text: string): QuoteMetadata {
     }
 
     return {
-      author: (authorMatch && authorMatch[1]) ? authorMatch[1] : "Unknown",
-      source: (sourceMatch && sourceMatch[1]) ? sourceMatch[1] : "Unknown",
-      language: (langMatch && langMatch[1]) ? langMatch[1] : "English",
-      ai_context: (contextMatch && contextMatch[1]) ? contextMatch[1] : "This quote invites deep reflection on the nature of existence and the quiet spaces within human experience.",
+      author: (authorMatch && authorMatch[1]) ? unescapeJSONString(authorMatch[1]) : "Unknown",
+      source: (sourceMatch && sourceMatch[1]) ? unescapeJSONString(sourceMatch[1]) : "Unknown",
+      language: (langMatch && langMatch[1]) ? unescapeJSONString(langMatch[1]) : "English",
+      ai_context: (contextMatch && contextMatch[1]) ? unescapeJSONString(contextMatch[1]) : "This quote invites deep reflection on the nature of existence and the quiet spaces within human experience.",
       tags: tags.length > 0 ? tags : ["Reflection", "Wisdom"],
-      cleaned_text: (cleanedTextMatch && cleanedTextMatch[1]) ? cleanedTextMatch[1] : undefined,
-      color: (colorMatch && colorMatch[1]) ? colorMatch[1] : "#d97706",
+      cleaned_text: (cleanedTextMatch && cleanedTextMatch[1]) ? unescapeJSONString(cleanedTextMatch[1]) : undefined,
+      color: (colorMatch && colorMatch[1]) ? unescapeJSONString(colorMatch[1]) : "#d97706",
     };
   }
 }

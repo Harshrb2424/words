@@ -42,6 +42,19 @@ interface WallpaperModalProps {
   quote: Quote;
 }
 
+const PRESET_COLORS = [
+  "#d97706", // Amber
+  "#2563eb", // Blue
+  "#db2777", // Pink
+  "#059669", // Emerald
+  "#7c3aed", // Violet
+  "#ea580c", // Orange
+  "#0891b2", // Cyan
+  "#4f46e5", // Indigo
+  "#be185d", // Rose
+  "#9333ea", // Purple
+];
+
 type ResolutionPreset = "phone-hd" | "phone-4k" | "pc-fhd" | "pc-2k" | "pc-4k" | "insta-square" | "insta-portrait" | "twitter-post" | "custom";
 
 export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModalProps) {
@@ -51,7 +64,8 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
   const [preset, setPreset] = useState<ResolutionPreset>("phone-hd");
   const [width, setWidth] = useState(1080);
   const [height, setHeight] = useState(1920);
-  const [themeMode, setThemeMode] = useState<"old-book" | "midnight" | "sage" | "aura">("old-book");
+  const [themeMode, setThemeMode] = useState<"old-book" | "midnight" | "sage" | "aura">("aura");
+  const [customColor, setCustomColor] = useState(quote.color || "#d97706");
   
   // Toggle states
   const [showAuthor, setShowAuthor] = useState(true);
@@ -59,6 +73,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
   const [showLanguage, setShowLanguage] = useState(false);
   const [showIndex, setShowIndex] = useState(false);
   const [showWatermark, setShowWatermark] = useState(true);
+  const [showBorder, setShowBorder] = useState(true);
 
   // New options: Padding, Font scaling, background image, and filters
   const [paddingPercent, setPaddingPercent] = useState(10);
@@ -145,7 +160,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
   useEffect(() => {
     if (!isOpen) {
       setPreset("phone-hd");
-      setThemeMode("old-book");
+      setThemeMode("aura");
       setShowAuthor(true);
       setShowSource(true);
       setShowLanguage(false);
@@ -161,8 +176,17 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
       setBrightnessAmount(100);
       setGrayscaleAmount(0);
       setSepiaAmount(0);
+      setCustomColor(quote.color || "#d97706");
+      setShowBorder(true);
     }
-  }, [isOpen]);
+  }, [isOpen, quote.color]);
+
+  // Set the color to match the quote's color when the modal is opened or quote changes
+  useEffect(() => {
+    if (isOpen) {
+      setCustomColor(quote.color || "#d97706");
+    }
+  }, [isOpen, quote.id, quote.color]);
 
   // Redraw canvas whenever options change
   useEffect(() => {
@@ -191,7 +215,9 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
     grayscaleAmount,
     sepiaAmount,
     fontScale,
-    paddingPercent
+    paddingPercent,
+    customColor,
+    showBorder
   ]);
 
   const drawWallpaper = () => {
@@ -222,7 +248,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
       textSecondary = "#4a6b57";
       borderLine = "#dbe5df";
     } else if (themeMode === "aura") {
-      const accentColor = quote.color || "#d97706";
+      const accentColor = customColor;
       const cleanHex = accentColor.replace("#", "");
       const r = parseInt(cleanHex.substring(0, 2), 16) || 217;
       const g = parseInt(cleanHex.substring(2, 4), 16) || 119;
@@ -287,9 +313,11 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
 
     // 2. Draw subtle border frame
     const margin = Math.min(width, height) * 0.05; // 5% of smaller dimension
-    ctx.lineWidth = Math.max(1, Math.min(width, height) * 0.003);
-    ctx.strokeStyle = borderLine;
-    ctx.strokeRect(margin, margin, width - margin * 2, height - margin * 2);
+    if (showBorder) {
+      ctx.lineWidth = Math.max(1, Math.min(width, height) * 0.003);
+      ctx.strokeStyle = borderLine;
+      ctx.strokeRect(margin, margin, width - margin * 2, height - margin * 2);
+    }
 
     // 3. Typographical setup
     const isPortrait = height > width;
@@ -776,7 +804,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
 
             {/* Aesthetics Wallpaper Theme */}
             {!loadedBgImage && (
-              <div className="space-y-2 pt-4 border-t border-dashed border-border-custom">
+              <div className="space-y-3 pt-4 border-t border-dashed border-border-custom">
                 <label className="text-[10px] font-bold tracking-widest uppercase text-foreground/60 flex items-center gap-1.5">
                   <Settings className="h-3 w-3" />
                   Color Theme
@@ -820,9 +848,9 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                     type="button"
                     onClick={() => setThemeMode("aura")}
                     style={{
-                      borderColor: themeMode === "aura" ? (quote.color || "#d97706") : undefined,
-                      backgroundColor: themeMode === "aura" ? `rgba(${parseInt((quote.color || "#d97706").substring(1,3), 16) || 217}, ${parseInt((quote.color || "#d97706").substring(3,5), 16) || 119}, ${parseInt((quote.color || "#d97706").substring(5,7), 16) || 6}, 0.15)` : undefined,
-                      color: themeMode === "aura" ? (quote.color || "#d97706") : undefined
+                      borderColor: themeMode === "aura" ? customColor : undefined,
+                      backgroundColor: themeMode === "aura" ? `rgba(${parseInt(customColor.substring(1,3), 16) || 217}, ${parseInt(customColor.substring(3,5), 16) || 119}, ${parseInt(customColor.substring(5,7), 16) || 6}, 0.15)` : undefined,
+                      color: themeMode === "aura" ? customColor : undefined
                     }}
                     className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition-all cursor-pointer ${
                       themeMode === "aura"
@@ -833,16 +861,66 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
                     Aura
                   </button>
                 </div>
+
+                {/* Aura Color Customizer */}
+                {themeMode === "aura" && (
+                  <div className="pt-2 space-y-2">
+                    <span className="text-[9px] uppercase font-bold text-foreground/50 block">Aura Accent Color</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {PRESET_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setCustomColor(c)}
+                          style={{ backgroundColor: c }}
+                          className={`h-6 w-6 rounded-full border transition-all cursor-pointer hover:scale-110 flex items-center justify-center ${
+                            customColor.toLowerCase() === c.toLowerCase()
+                              ? "border-white scale-110 shadow-md ring-2 ring-accent-custom"
+                              : "border-transparent"
+                          }`}
+                        >
+                          {customColor.toLowerCase() === c.toLowerCase() && (
+                            <Check className="h-3 w-3 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" />
+                          )}
+                        </button>
+                      ))}
+                      
+                      {/* Custom color picker */}
+                      <div className="relative h-6 w-6 rounded-full border border-border-custom overflow-hidden cursor-pointer hover:scale-110 transition-all flex items-center justify-center bg-zinc-800">
+                        <input
+                          type="color"
+                          value={customColor}
+                          onChange={(e) => setCustomColor(e.target.value)}
+                          className="absolute inset-0 opacity-0 cursor-pointer h-full w-full"
+                        />
+                        <div 
+                          style={{ backgroundColor: customColor }}
+                          className="h-4 w-4 rounded-full border border-border-custom/50"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Toggle components (Author, source, index, lang, watermark) */}
             <div className="space-y-3 pt-4 border-t border-dashed border-border-custom">
               <label className="text-[10px] font-bold tracking-widest uppercase text-foreground/60 block">
-                Visible Provenance
+                Visible Provenance & Frame
               </label>
 
               <div className="space-y-2">
+                <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showBorder}
+                    onChange={(e) => setShowBorder(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-border-custom bg-background/50 accent-accent-custom focus:outline-none"
+                  />
+                  <span>Show Border Frame</span>
+                </label>
+
                 <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none">
                   <input
                     type="checkbox"

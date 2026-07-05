@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   try {
     const res = await fetch(`${apiUrl}/api/quotes/${id}`, {
-      next: { revalidate: 3600 },
+      next: { revalidate: 0 },
       headers: {
         "Accept": "application/json",
         "x-words-internal": "words-frontend"
@@ -81,7 +81,7 @@ export default async function QuotePage({ params }: PageProps) {
   let quote: Quote | null = null;
   try {
     const res = await fetch(`${apiUrl}/api/quotes/${id}`, {
-      next: { revalidate: 3600 },
+      next: { revalidate: 0 },
       headers: {
         "Accept": "application/json",
         "x-words-internal": "words-frontend"
@@ -106,7 +106,7 @@ export default async function QuotePage({ params }: PageProps) {
         quote.related_quote_ids.map(async (rId: number) => {
           try {
             const res = await fetch(`${apiUrl}/api/quotes/${rId}`, {
-              next: { revalidate: 3600 },
+              next: { revalidate: 0 },
               headers: {
                 "Accept": "application/json",
                 "x-words-internal": "words-frontend"

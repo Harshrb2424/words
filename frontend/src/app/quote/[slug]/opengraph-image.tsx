@@ -26,7 +26,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
   if (id !== -1) {
     try {
       const res = await fetch(`${apiUrl}/api/quotes/${id}`, {
-        next: { revalidate: 3600 },
+        next: { revalidate: 0 },
         headers: {
           "Accept": "application/json",
           "x-words-internal": "words-frontend",
