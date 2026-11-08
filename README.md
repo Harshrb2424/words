@@ -173,6 +173,26 @@ bun run start:worker
 bun run dev
 ```
 
+### Repairing Corrupted Quote Text
+
+Older uploads could reach the Worker as gzip/binary data and be stored in D1 as
+unreadable text. The API now detects those rows, hides them from normal reads,
+and attempts to recover the original bytes through SQLite's `hex()` function.
+
+Run the repair manually at any time:
+
+```bash
+# Against the deployed Worker (default)
+bun run repair:quotes
+
+# Against a local Worker
+WORDS_API_URL=http://localhost:8787 bun run repair:quotes
+```
+
+The same operation is available at `POST /api/maintenance/repair`. Use
+`GET /api/quotes?include_corrupted=1` only for debugging; normal responses never
+include corrupted rows.
+
 ---
 
 ## Technical Performance Profile

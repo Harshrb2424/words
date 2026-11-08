@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Quote } from "@/types";
 import MasonryGrid from "./MasonryGrid";
 import Header from "./Header";
 import { Search, Sparkles, Loader2, ArrowDown } from "lucide-react";
 import ThemeSwitcher from "./ThemeSwitcher";
+import { isRenderableQuote } from "@/utils/text";
 
 interface QuotesArchiveProps {
   initialQuotes: Quote[];
@@ -46,38 +47,56 @@ export default function QuotesArchive({ initialQuotes }: QuotesArchiveProps) {
   }, []);
 
   // Extract unique tags for tag pill filters
-  const allTags = Array.from(
-    new Set(initialQuotes.flatMap((q) => q.tags || []))
-  ).slice(0, 12);
+  const allTags = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          initialQuotes
+            .filter(isRenderableQuote)
+            .flatMap((q) => q.tags || [])
+        )
+      ).slice(0, 12),
+    [initialQuotes]
+  );
+
+  // Never render rows whose text was stored as corrupted binary data.
+  const visibleQuotes = useMemo(
+    () => quotes.filter(isRenderableQuote),
+    [quotes]
+  );
 
   // Shared database query fetcher
   const queryDatabase = async (queryText: string, activeTag: string | null, currentOffset: number, isNewSearch: boolean) => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787";
-    
-    // Combine search text and tag search
-    let searchTerm = queryText;
-    if (activeTag) {
-      searchTerm = searchTerm ? `${searchTerm} ${activeTag}` : activeTag;
-    }
 
     const limit = 30;
-    const url = `${apiUrl}/api/quotes?limit=${limit}&offset=${currentOffset}${searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""}`;
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(currentOffset),
+    });
+
+    // Keep free-text search and tag filtering as separate parameters.
+    if (queryText.trim()) params.set("q", queryText.trim());
+    if (activeTag) params.set("tag", activeTag);
+
+    const url = `${apiUrl}/api/quotes?${params.toString()}`;
 
     try {
       const response = await fetch(url, {
         headers: { "Accept": "application/json" }
       });
       if (response.ok) {
-        const data: Quote[] = await response.json();
+        const rawData = await response.json() as Quote[];
+        const data = rawData.filter(isRenderableQuote);
         
         if (isNewSearch) {
           setQuotes(data);
-          setOffset(data.length);
-          setHasMore(data.length === limit);
+          setOffset(rawData.length);
+          setHasMore(rawData.length === limit);
         } else {
           setQuotes((prev) => [...prev, ...data]);
-          setOffset((prev) => prev + data.length);
-          setHasMore(data.length === limit);
+          setOffset((prev) => prev + rawData.length);
+          setHasMore(rawData.length === limit);
         }
       }
     } catch (err) {
@@ -154,7 +173,7 @@ export default function QuotesArchive({ initialQuotes }: QuotesArchiveProps) {
             <div className="hidden items-center gap-4 rounded-2xl border border-border-custom bg-card-custom/50 px-5 py-3 sm:flex">
               <div className="flex items-center gap-1.5 text-xs text-foreground/75">
                 <span className="font-semibold text-foreground">
-                  {quotes.length}
+                  {visibleQuotes.length}
                 </span>
                 <span>items loaded</span>
               </div>
@@ -196,7 +215,7 @@ export default function QuotesArchive({ initialQuotes }: QuotesArchiveProps) {
 
         {/* Masonry Grid Display */}
         <section className="min-h-[300px]">
-          <MasonryGrid quotes={quotes} />
+          <MasonryGrid quotes={visibleQuotes} />
         </section>
 
         {/* Load More Button */}

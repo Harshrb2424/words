@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, Download, Eye, Smartphone, Monitor, Settings, Check, LayoutGrid } from "lucide-react";
 import { Quote } from "@/types";
+import { cleanText } from "@/utils/text";
 
 const InstagramIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -332,7 +333,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
 
     // Dynamic wrap calculation
     ctx.font = `italic 500 ${quoteFontSize}px Georgia, "Playfair Display", serif`;
-    const words = `“ ${quote.quote_text} ”`.split(" ");
+    const words = `“ ${cleanText(quote.quote_text)} ”`.split(" ");
     const lines: string[] = [];
     let currentLine = "";
     
@@ -388,7 +389,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
       currentY += authorFontSize * 1.2;
       ctx.font = `italic 600 ${authorFontSize}px Georgia, "Playfair Display", serif`;
       ctx.fillStyle = textSecondary;
-      ctx.fillText(`— ${quote.author || "Unknown"}`, width / 2, currentY);
+      ctx.fillText(`— ${cleanText(quote.author) || "Unknown"}`, width / 2, currentY);
       currentY += authorFontSize;
     }
 
@@ -397,7 +398,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
       currentY += metaFontSize * 1.2;
       ctx.font = `normal 500 ${metaFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
       ctx.fillStyle = textSecondary;
-      ctx.fillText(quote.source, width / 2, currentY);
+      ctx.fillText(cleanText(quote.source), width / 2, currentY);
       currentY += metaFontSize;
     }
 
@@ -433,7 +434,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
     try {
       const url = canvas.toDataURL("image/png");
       const link = document.createElement("a");
-      const slug = quote.quote_text.toLowerCase().replace(/[^a-z0-9]+/g, "-").substring(0, 20);
+      const slug = cleanText(quote.quote_text).toLowerCase().replace(/[^a-z0-9]+/g, "-").substring(0, 20);
       link.download = `wallpaper-${slug || "quote"}-${width}x${height}.png`;
       link.href = url;
       link.click();

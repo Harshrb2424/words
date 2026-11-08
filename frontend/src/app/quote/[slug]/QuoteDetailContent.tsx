@@ -6,6 +6,7 @@ import { ArrowLeft, Sparkles, Bookmark, User, Share2, Layers, Calendar } from "l
 import { Quote } from "@/types";
 import { getQuoteSlug } from "@/utils/slug";
 import { getAccentStyles } from "@/utils/color";
+import { cleanText } from "@/utils/text";
 import QuoteActions from "./QuoteActions";
 import WallpaperModal from "@/components/WallpaperModal";
 import ThemeSwitcher from "@/components/ThemeSwitcher";
@@ -75,13 +76,13 @@ export default function QuoteDetailContent({ quote, relatedQuotes }: QuoteDetail
               “
             </span>
             <blockquote className="relative z-10 font-serif text-2xl md:text-3.5xl font-medium leading-relaxed tracking-wide text-foreground">
-              &nbsp;&nbsp;&nbsp;{quote.quote_text}
+              &nbsp;&nbsp;&nbsp;{cleanText(quote.quote_text)}
             </blockquote>
 
             <div className="mt-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-t border-dashed border-border-custom pt-6">
               <div className="flex items-center gap-2.5">
                 <span className="font-serif text-lg italic font-medium text-foreground/90">
-                  - {quote.author || "Unknown"}
+                  - {cleanText(quote.author) || "Unknown"}
                 </span>
               </div>
             </div>
@@ -103,7 +104,7 @@ export default function QuoteDetailContent({ quote, relatedQuotes }: QuoteDetail
                   <Bookmark className="mt-0.5 h-3.5 w-3.5 text-zinc-400 shrink-0" />
                   <div>
                     <span className="block font-semibold text-foreground">Source</span>
-                    <span className="italic dark:text-zinc-400">{quote.source || "Unknown"}</span>
+                    <span className="italic dark:text-zinc-400">{cleanText(quote.source) || "Unknown"}</span>
                   </div>
                 </div>
                 
@@ -111,7 +112,7 @@ export default function QuoteDetailContent({ quote, relatedQuotes }: QuoteDetail
                   <Layers className="mt-0.5 h-3.5 w-3.5 text-zinc-400 shrink-0" />
                   <div>
                     <span className="block font-semibold text-foreground">Language</span>
-                    <span className="dark:text-zinc-400">{quote.language || "English"}</span>
+                    <span className="dark:text-zinc-400">{cleanText(quote.language) || "English"}</span>
                   </div>
                 </div>
 
@@ -136,7 +137,7 @@ export default function QuoteDetailContent({ quote, relatedQuotes }: QuoteDetail
               </h3>
 
               <p className="mt-3.5 text-sm leading-relaxed text-foreground/90">
-                {quote.ai_context || "This quote invites deep reflection on the nature of existence and the quiet spaces within human experience."}
+                {cleanText(quote.ai_context) || "This quote invites deep reflection on the nature of existence and the quiet spaces within human experience."}
               </p>
 
               {/* Tags Pills inside Insight card */}
@@ -171,11 +172,11 @@ export default function QuoteDetailContent({ quote, relatedQuotes }: QuoteDetail
                     className="group block rounded-2xl border border-border-custom bg-card-custom p-5 transition-all duration-300 hover:border-zinc-400 dark:hover:border-zinc-600 hover:-translate-y-0.5"
                   >
                     <p className="line-clamp-3 font-serif text-base italic leading-relaxed text-foreground/80 group-hover:text-accent-custom">
-                      “{simQuote.quote_text}”
+                      “{cleanText(simQuote.quote_text)}”
                     </p>
                     <div className="mt-4 flex items-center justify-between text-xs text-foreground/60">
                       <span className="font-serif italic group-hover:text-accent-custom">
-                        - {simQuote.author}
+                        - {cleanText(simQuote.author) || "Unknown"}
                       </span>
                       <span className="font-mono">#000{simQuote.id}</span>
                     </div>

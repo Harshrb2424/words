@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { extractIdFromSlug } from "@/utils/slug";
 import { Quote } from "@/types";
+import { cleanText, isRenderableQuote } from "@/utils/text";
 
 export const runtime = "edge";
 
@@ -40,9 +41,10 @@ export default async function Image({ params }: { params: Promise<{ slug: string
     }
   }
 
-  const quoteText = quote ? quote.quote_text : "Not all those who wander are lost.";
-  const authorText = quote ? quote.author : "J.R.R. Tolkien";
-  const sourceText = quote && quote.source && quote.source !== "Unknown" ? quote.source : "";
+  const safeQuote = quote && isRenderableQuote(quote) ? quote : null;
+  const quoteText = safeQuote ? cleanText(safeQuote.quote_text) : "Not all those who wander are lost.";
+  const authorText = safeQuote ? cleanText(safeQuote.author) || "Unknown" : "J.R.R. Tolkien";
+  const sourceText = safeQuote && safeQuote.source && safeQuote.source !== "Unknown" ? cleanText(safeQuote.source) : "";
   const accentColor = quote && quote.color ? quote.color : "#d97706";
 
   // Parse color hex to rgba glow color

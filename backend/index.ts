@@ -32,6 +32,287 @@ interface QuoteMetadata {
 // Global in-memory cache for GET requests (purged on writes)
 const readCache = new Map<string, { body: string; headers: [string, string][]; status: number; expiry: number }>();
 
+const REPLACEMENT_CHAR = "\uFFFD";
+const ALLOWED_WHITESPACE = new Set(["\n", "\r", "\t"]);
+const ZERO_WIDTH_CHARS = /[\u200B-\u200D\uFEFF]/g;
+const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
+
+function countSuspiciousChars(value: string): number {
+  let suspicious = 0;
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (
+      char === REPLACEMENT_CHAR ||
+      (code < 0x20 && !ALLOWED_WHITESPACE.has(char)) ||
+      (code >= 0x7f && code <= 0x9f)
+    ) {
+      suspicious++;
+    }
+  }
+  return suspicious;
+}
+
+/**
+ * Detects text that was corrupted by decoding binary data (for example a
+ * gzip stream) as UTF-8. Those values contain replacement characters and/or
+ * raw control characters and must never be rendered in the archive.
+ */
+function isCorruptedText(value: unknown): boolean {
+  if (typeof value !== "string") return true;
+  if (!value.trim()) return true;
+  if (value.charCodeAt(0) === 0x1f) return true;
+
+  const suspicious = countSuspiciousChars(value);
+  if (suspicious === 0) return false;
+
+  // A single stray control character in a long quote can simply be stripped.
+  return suspicious / value.length >= 0.005;
+}
+
+/** Removes characters that should never be displayed to a reader. */
+function cleanText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(CONTROL_CHARS, "")
+    .split(REPLACEMENT_CHAR)
+    .join("")
+    .replace(ZERO_WIDTH_CHARS, "")
+    .trim();
+}
+
+function hexToBytes(hexValue: string | null | undefined): Uint8Array | null {
+  if (!hexValue || hexValue.length % 2 !== 0) return null;
+  const bytes = new Uint8Array(hexValue.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = parseInt(hexValue.substring(i * 2, i * 2 + 2), 16);
+    if (Number.isNaN(byte)) return null;
+    bytes[i] = byte;
+  }
+  return bytes;
+}
+
+/** Decompresses a gzip payload without relying on any extra dependency. */
+async function gunzipBytes(bytes: Uint8Array): Promise<string | null> {
+  try {
+    const DecompressionStreamCtor = (globalThis as any).DecompressionStream;
+    if (!DecompressionStreamCtor) return null;
+
+    const decompressionStream = new DecompressionStreamCtor("gzip");
+    const writer = decompressionStream.writable.getWriter();
+    await writer.write(bytes);
+    await writer.close();
+
+    return await new Response(decompressionStream.readable).text();
+  } catch (error) {
+    console.warn("Unable to decompress gzip payload:", error);
+    return null;
+  }
+}
+
+/**
+ * Recovers a text field from the raw bytes stored in D1. Older uploads stored
+ * gzip-compressed request bodies verbatim in TEXT columns; reading them through
+ * the normal D1 binding produced UTF-8 replacement characters, but `hex()`
+ * still exposes the original bytes so the value can be decompressed.
+ */
+async function recoverTextFromHex(hexValue: string | null | undefined): Promise<string | null> {
+  const bytes = hexToBytes(hexValue);
+  if (!bytes || bytes.length === 0) return null;
+
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const decompressed = await gunzipBytes(bytes);
+    if (decompressed && !isCorruptedText(decompressed)) {
+      return cleanText(decompressed);
+    }
+    return null;
+  }
+
+  const decoded = new TextDecoder().decode(bytes);
+  return !isCorruptedText(decoded) ? cleanText(decoded) : null;
+}
+
+/**
+ * Reads a request body, transparently decompressing gzip bodies. This prevents
+ * compressed request payloads from being stored as garbled text.
+ */
+async function readRequestBodyText(request: Request): Promise<string> {
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const decompressed = await gunzipBytes(bytes);
+    if (decompressed !== null) return decompressed;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function sanitizeQuoteRow(row: any): any {
+  return {
+    ...row,
+    quote_text: cleanText(row.quote_text),
+    author: cleanText(row.author) || "Unknown",
+    source: cleanText(row.source) || "Unknown",
+    language: cleanText(row.language) || "English",
+    ai_context: cleanText(row.ai_context),
+    tags: typeof row.tags === "string" ? safeParseJSON(row.tags, []) : row.tags,
+    related_quote_ids:
+      typeof row.related_quote_ids === "string"
+        ? safeParseJSON(row.related_quote_ids, [])
+        : row.related_quote_ids,
+  };
+}
+
+function safeParseJSON<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function isRenderableQuoteRow(row: any): boolean {
+  return !isCorruptedText(row.quote_text) && !isCorruptedText(row.author);
+}
+
+interface RepairReport {
+  scanned: number;
+  recovered: number;
+  unrecoverable: number;
+  recovered_ids: number[];
+  unrecoverable_ids: number[];
+}
+
+/**
+ * Repairs rows whose text columns contain raw binary/gzip data. D1 still has
+ * the original bytes, so `hex()` allows us to recover the real UTF-8 text.
+ * Rows that cannot be recovered are reported and hidden from read responses.
+ */
+async function repairCorruptedQuotes(env: Env): Promise<RepairReport> {
+  const report: RepairReport = {
+    scanned: 0,
+    recovered: 0,
+    unrecoverable: 0,
+    recovered_ids: [],
+    unrecoverable_ids: [],
+  };
+
+  // Process in small id-ordered batches so large archives never exceed D1's
+  // per-query response limit and unrecoverable rows cannot block later rows.
+  let lastId = 0;
+
+  for (let batch = 0; batch < 50; batch++) {
+    const { results } = await env.DB.prepare(`
+      SELECT
+        id, quote_text, author, source, ai_context, language, color,
+        CASE WHEN instr(quote_text, char(65533)) > 0 OR instr(quote_text, char(31)) > 0
+          THEN hex(quote_text) END AS quote_hex,
+        CASE WHEN instr(author, char(65533)) > 0 OR instr(author, char(31)) > 0
+          THEN hex(author) END AS author_hex,
+        CASE WHEN instr(source, char(65533)) > 0 OR instr(source, char(31)) > 0
+          THEN hex(source) END AS source_hex,
+        CASE WHEN instr(ai_context, char(65533)) > 0 OR instr(ai_context, char(31)) > 0
+          THEN hex(ai_context) END AS ai_context_hex,
+        CASE WHEN instr(language, char(65533)) > 0 OR instr(language, char(31)) > 0
+          THEN hex(language) END AS language_hex
+      FROM quotes
+      WHERE id > ? AND (
+        instr(quote_text, char(65533)) > 0 OR instr(quote_text, char(31)) > 0
+        OR instr(author, char(65533)) > 0 OR instr(author, char(31)) > 0
+        OR instr(source, char(65533)) > 0 OR instr(source, char(31)) > 0
+        OR instr(ai_context, char(65533)) > 0 OR instr(ai_context, char(31)) > 0
+        OR instr(language, char(65533)) > 0 OR instr(language, char(31)) > 0
+      )
+      ORDER BY id
+      LIMIT 20
+    `).bind(lastId).all();
+
+    const rows = results as any[];
+    if (rows.length === 0) break;
+    lastId = rows[rows.length - 1].id;
+
+    for (const row of rows) {
+      report.scanned++;
+
+      const quoteText = isCorruptedText(row.quote_text)
+        ? await recoverTextFromHex(row.quote_hex)
+        : cleanText(row.quote_text);
+
+      if (!quoteText || isCorruptedText(quoteText)) {
+        report.unrecoverable++;
+        report.unrecoverable_ids.push(row.id);
+        continue;
+      }
+
+      const author = isCorruptedText(row.author)
+        ? await recoverTextFromHex(row.author_hex)
+        : cleanText(row.author);
+      const source = isCorruptedText(row.source)
+        ? await recoverTextFromHex(row.source_hex)
+        : cleanText(row.source);
+      const aiContext = isCorruptedText(row.ai_context)
+        ? await recoverTextFromHex(row.ai_context_hex)
+        : cleanText(row.ai_context);
+      const language = isCorruptedText(row.language)
+        ? await recoverTextFromHex(row.language_hex)
+        : cleanText(row.language);
+
+      const updates = [
+        "quote_text = ?",
+        "author = ?",
+        "source = ?",
+        "ai_context = ?",
+        "language = ?",
+        "color = ?",
+      ];
+      const binds: any[] = [
+        quoteText,
+        author || "Unknown",
+        source || "Unknown",
+        aiContext || "This quote invites deep reflection on the nature of existence.",
+        language || "English",
+        normalizeColor(quoteText, row.color),
+        row.id,
+      ];
+
+      await env.DB.prepare(`UPDATE quotes SET ${updates.join(", ")} WHERE id = ?`)
+        .bind(...binds)
+        .run();
+
+      report.recovered++;
+      report.recovered_ids.push(row.id);
+    }
+  }
+
+  if (report.recovered > 0) {
+    readCache.clear();
+    console.log(`Recovered ${report.recovered} corrupted quote(s) from D1.`);
+  }
+  if (report.unrecoverable > 0) {
+    console.warn(`Could not recover ${report.unrecoverable} corrupted quote(s).`);
+  }
+
+  return report;
+}
+
+let repairPromise: Promise<RepairReport> | null = null;
+
+/** Runs the corruption repair once per Worker isolate, on first read. */
+async function ensureCorruptedQuotesRepaired(env: Env): Promise<RepairReport> {
+  if (!repairPromise) {
+    repairPromise = repairCorruptedQuotes(env).catch((error) => {
+      console.error("Automatic corrupted-quote repair failed:", error);
+      // Allow a later request to retry after a transient failure.
+      repairPromise = null;
+      return {
+        scanned: 0,
+        recovered: 0,
+        unrecoverable: 0,
+        recovered_ids: [],
+        unrecoverable_ids: [],
+      };
+    });
+  }
+  return repairPromise;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -156,6 +437,25 @@ export default {
         }
       }
 
+      // Maintenance: repair gzip/binary-corrupted quote text
+      if (url.pathname === "/api/maintenance/repair") {
+        if (request.method === "POST" || request.method === "GET") {
+          const report = await repairCorruptedQuotes(env);
+          return new Response(
+            JSON.stringify({
+              message: "Corrupted quote repair completed.",
+              summary: report,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+          );
+        } else {
+          return new Response(JSON.stringify({ error: "Method not allowed" }), {
+            status: 405,
+            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+          });
+        }
+      }
+
       // Maintenance: Reindex database & polish grammar
       if (url.pathname === "/api/maintenance/reindex") {
         if (request.method === "POST" || request.method === "GET") {
@@ -237,17 +537,42 @@ export default {
  */
 async function handleGetQuotes(env: Env, url: URL): Promise<Response> {
   try {
-    const limit = parseInt(url.searchParams.get("limit") || "1000");
-    const offset = parseInt(url.searchParams.get("offset") || "0");
-    const q = url.searchParams.get("q") || "";
+    // Self-heal any legacy rows that were stored as gzip/binary data.
+    await ensureCorruptedQuotesRepaired(env);
 
-    let query = "SELECT * FROM quotes";
+    const parsedLimit = parseInt(url.searchParams.get("limit") || "1000", 10);
+    const parsedOffset = parseInt(url.searchParams.get("offset") || "0", 10);
+    const limit = Number.isNaN(parsedLimit) ? 1000 : Math.min(Math.max(parsedLimit, 1), 1000);
+    const offset = Number.isNaN(parsedOffset) ? 0 : Math.max(parsedOffset, 0);
+    const q = (url.searchParams.get("q") || "").trim();
+    const tag = (url.searchParams.get("tag") || "").trim();
+    const includeCorrupted = url.searchParams.get("include_corrupted") === "1";
+
+    let query = "SELECT * FROM quotes WHERE 1=1";
     const binds: any[] = [];
 
+    // Search each word independently so "Camus Albert" and "Albert Camus"
+    // both find the same quote.
     if (q) {
-      query += " WHERE quote_text LIKE ? OR author LIKE ? OR source LIKE ? OR tags LIKE ?";
-      const searchWildcard = `%${q}%`;
-      binds.push(searchWildcard, searchWildcard, searchWildcard, searchWildcard);
+      const tokens = q.split(/\s+/).filter(Boolean).slice(0, 6);
+      for (const token of tokens) {
+        query += " AND (quote_text LIKE ? OR author LIKE ? OR source LIKE ? OR tags LIKE ?)";
+        const searchWildcard = `%${token}%`;
+        binds.push(searchWildcard, searchWildcard, searchWildcard, searchWildcard);
+      }
+    }
+
+    // Tag filtering is kept separate from free-text search.
+    if (tag) {
+      query += " AND tags LIKE ?";
+      binds.push(`%${tag}%`);
+    }
+
+    // Never expose binary-corrupted rows in normal reads.
+    if (!includeCorrupted) {
+      query +=
+        " AND instr(quote_text, char(65533)) = 0 AND instr(quote_text, char(31)) = 0" +
+        " AND instr(author, char(65533)) = 0 AND instr(author, char(31)) = 0";
     }
 
     query += " ORDER BY id DESC LIMIT ? OFFSET ?";
@@ -255,12 +580,9 @@ async function handleGetQuotes(env: Env, url: URL): Promise<Response> {
 
     const { results } = await env.DB.prepare(query).bind(...binds).all();
 
-    // Parse JSON fields in database results for standard frontend usage
-    const parsedResults = results.map((row: any) => ({
-      ...row,
-      tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
-      related_quote_ids: typeof row.related_quote_ids === "string" ? JSON.parse(row.related_quote_ids) : row.related_quote_ids,
-    }));
+    const parsedResults = (results as any[])
+      .filter((row) => includeCorrupted || isRenderableQuoteRow(row))
+      .map((row) => sanitizeQuoteRow(row));
 
     return new Response(JSON.stringify(parsedResults), {
       status: 200,
@@ -283,6 +605,8 @@ async function handleGetQuotes(env: Env, url: URL): Promise<Response> {
  */
 async function handleGetQuoteById(id: number, env: Env): Promise<Response> {
   try {
+    await ensureCorruptedQuotesRepaired(env);
+
     const quote = await env.DB.prepare("SELECT * FROM quotes WHERE id = ?").bind(id).first();
     if (!quote) {
       return new Response(JSON.stringify({ error: "Quote not found" }), {
@@ -291,11 +615,20 @@ async function handleGetQuoteById(id: number, env: Env): Promise<Response> {
       });
     }
 
-    const parsedQuote = {
-      ...quote,
-      tags: typeof quote.tags === "string" ? JSON.parse(quote.tags) : quote.tags,
-      related_quote_ids: typeof quote.related_quote_ids === "string" ? JSON.parse(quote.related_quote_ids) : quote.related_quote_ids,
-    };
+    if (!isRenderableQuoteRow(quote)) {
+      return new Response(
+        JSON.stringify({
+          error: "Quote unavailable",
+          message: "This quote was stored as corrupted binary data and could not be recovered.",
+        }),
+        {
+          status: 410,
+          headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+        }
+      );
+    }
+
+    const parsedQuote = sanitizeQuoteRow(quote);
 
     return new Response(JSON.stringify(parsedQuote), {
       status: 200,
@@ -586,6 +919,15 @@ async function processSingleQuote(
   rawText: string,
   env: Env
 ): Promise<{ success: boolean; status: number; quote?: any; error?: string }> {
+  if (typeof rawText !== "string" || !rawText.trim() || isCorruptedText(rawText)) {
+    return {
+      success: false,
+      status: 400,
+      error: "Bad Request: The quote contains binary or compressed data instead of readable text.",
+    };
+  }
+  rawText = cleanText(rawText);
+
   // Step 0: Perform Web Search RAG to identify real author/source
   console.log(`Performing web search to identify origin for quote: "${rawText.substring(0, 50)}..."`);
   const searchQuery = rawText.replace(/[\r\n]+/g, " ").substring(0, 150).trim();
@@ -810,9 +1152,11 @@ async function handlePostQuote(request: Request, env: Env): Promise<Response> {
   let rawText = "";
 
   const contentType = request.headers.get("Content-Type") || "";
+  const bodyText = await readRequestBodyText(request);
+
   if (contentType.includes("application/json")) {
     try {
-      const body = await request.json() as any;
+      const body = JSON.parse(bodyText) as any;
       rawText = body.text || body.quote_text || body.quote || "";
     } catch (e) {
       return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
@@ -821,12 +1165,10 @@ async function handlePostQuote(request: Request, env: Env): Promise<Response> {
       });
     }
   } else {
-    rawText = await request.text();
+    rawText = bodyText;
   }
 
-  rawText = rawText.trim();
-
-  if (!rawText) {
+  if (typeof rawText !== "string" || !rawText.trim()) {
     return new Response(
       JSON.stringify({ error: "Bad Request: Raw quote text must not be empty." }),
       {
@@ -835,6 +1177,20 @@ async function handlePostQuote(request: Request, env: Env): Promise<Response> {
       }
     );
   }
+
+  if (isCorruptedText(rawText)) {
+    return new Response(
+      JSON.stringify({
+        error: "Bad Request: The quote contains binary or compressed data instead of readable text.",
+      }),
+      {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      }
+    );
+  }
+
+  rawText = cleanText(rawText);
 
   console.log(`Processing single quote upload: "${rawText.substring(0, 60)}..."`);
   const result = await processSingleQuote(rawText, env);
@@ -870,9 +1226,11 @@ async function handleBulkPostQuotes(request: Request, env: Env): Promise<Respons
   let rawText = "";
 
   const contentType = request.headers.get("Content-Type") || "";
+  const bodyText = await readRequestBodyText(request);
+
   if (contentType.includes("application/json")) {
     try {
-      const body = await request.json() as any;
+      const body = JSON.parse(bodyText) as any;
       rawText = body.text || body.quotes || body.quote || "";
     } catch (e) {
       return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
@@ -881,10 +1239,10 @@ async function handleBulkPostQuotes(request: Request, env: Env): Promise<Respons
       });
     }
   } else {
-    rawText = await request.text();
+    rawText = bodyText;
   }
 
-  if (!rawText.trim()) {
+  if (typeof rawText !== "string" || !rawText.trim()) {
     return new Response(
       JSON.stringify({ error: "Bad Request: Raw bulk quotes text must not be empty." }),
       {
@@ -893,6 +1251,20 @@ async function handleBulkPostQuotes(request: Request, env: Env): Promise<Respons
       }
     );
   }
+
+  if (isCorruptedText(rawText)) {
+    return new Response(
+      JSON.stringify({
+        error: "Bad Request: The submitted text contains binary or compressed data instead of readable quotes.",
+      }),
+      {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      }
+    );
+  }
+
+  rawText = cleanText(rawText);
 
   // Split by double newlines (\n\n) or double newlines with optional spaces/carriage returns
   const rawQuotes = rawText

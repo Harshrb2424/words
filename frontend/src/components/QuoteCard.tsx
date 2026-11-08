@@ -5,6 +5,7 @@ import { ExternalLink, Heart } from "lucide-react";
 import Link from "next/link";
 import { getQuoteSlug } from "@/utils/slug";
 import { getAccentStyles } from "@/utils/color";
+import { cleanText } from "@/utils/text";
 
 interface QuoteCardProps {
   quote: Quote;
@@ -51,7 +52,7 @@ export default function QuoteCard({
           “
         </span>
         <blockquote className="relative z-10 font-serif text-xl font-medium leading-relaxed tracking-wide text-foreground transition-colors group-hover/quote:text-[var(--quote-accent)] sm:text-2xl">
-          &nbsp;&nbsp;&nbsp;&nbsp;{quote.quote_text}
+          &nbsp;&nbsp;&nbsp;&nbsp;{cleanText(quote.quote_text)}
         </blockquote>
       </Link>
 
@@ -59,7 +60,7 @@ export default function QuoteCard({
       <div className="mt-5 flex items-center justify-between border-t border-dashed border-border-custom pt-4">
         <div className="flex items-center gap-3.5">
           <span className="font-serif text-sm italic text-foreground/80">
-            - {quote.author || "Unknown"}
+            - {cleanText(quote.author) || "Unknown"}
           </span>
           {typeof quote.likes === "number" && quote.likes > 0 && (
             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-500/85">

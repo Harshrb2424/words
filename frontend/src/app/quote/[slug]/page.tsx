@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Quote } from "@/types";
 import { extractIdFromSlug, getQuoteSlug } from "@/utils/slug";
+import { isRenderableQuote } from "@/utils/text";
 import QuoteDetailContent from "./QuoteDetailContent";
 
 interface PageProps {
@@ -35,6 +36,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     });
     if (res.ok) {
       const quote: Quote = await res.json();
+      if (!isRenderableQuote(quote)) {
+        return { title: "sanctuary - Words" };
+      }
       const cleanQuote = quote.quote_text.length > 50 
         ? `${quote.quote_text.substring(0, 48)}...` 
         : quote.quote_text;
@@ -94,7 +98,7 @@ export default async function QuotePage({ params }: PageProps) {
     console.error("Failed to retrieve quote details:", err);
   }
 
-  if (!quote) {
+  if (!quote || !isRenderableQuote(quote)) {
     notFound();
   }
 
@@ -118,7 +122,7 @@ export default async function QuotePage({ params }: PageProps) {
           }
           return null;
         })
-      ).then((items) => items.filter((item): item is Quote => item !== null));
+      ).then((items) => items.filter((item): item is Quote => item !== null && isRenderableQuote(item)));
     } catch (err) {
       console.warn("Failed to retrieve related quotes details:", err);
     }

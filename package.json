@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bun --cwd frontend run dev",
     "start:worker": "bun --cwd backend wrangler dev",
+    "repair:quotes": "bun repair.js",
     "build:frontend": "bun --cwd frontend run build",
     "lint:frontend": "bun --cwd frontend run lint",
     "typecheck:frontend": "bun --cwd frontend run typecheck",

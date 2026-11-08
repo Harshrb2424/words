@@ -1,5 +1,6 @@
 import { Quote } from "@/types";
 import QuotesArchive from "@/components/QuotesArchive";
+import { isRenderableQuote } from "@/utils/text";
 
 export const dynamic = "force-dynamic";
 export const runtime = "edge";
@@ -73,6 +74,8 @@ export default async function Page() {
 
     if (response.ok) {
       quotes = await response.json();
+      // Hide any legacy rows whose text is corrupted binary data.
+      quotes = quotes.filter(isRenderableQuote);
       // Cap at top 30 quotes for optimal page rendering and performance
       quotes = quotes.slice(0, 30);
       console.log(`Server Component: Successfully loaded ${quotes.length} quotes from active API.`);
