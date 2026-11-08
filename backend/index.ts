@@ -3,6 +3,8 @@
  * Built on Cloudflare Workers, D1, Vectorize, and Workers AI.
  */
 
+import { SEED_QUOTES } from "./seed-quotes";
+
 export interface Env {
   DB: D1Database;
   VECTORIZE: VectorizeIndex;
@@ -313,6 +315,112 @@ async function ensureCorruptedQuotesRepaired(env: Env): Promise<RepairReport> {
   return repairPromise;
 }
 
+/**
+ * Seeds the curated launch collection and optionally removes rows that could
+ * not be recovered from the legacy binary-data corruption.
+ */
+async function handleSeedQuotes(env: Env, url: URL): Promise<Response> {
+  try {
+    const shouldPurge = url.searchParams.get("purge_unrecoverable") === "1";
+    const shouldEmbed = url.searchParams.get("embeddings") === "1";
+    const purgedIds: number[] = [];
+
+    if (shouldPurge) {
+      // First give the repair routine one final chance to recover anything.
+      await repairCorruptedQuotes(env);
+
+      const { results } = await env.DB.prepare(`
+        SELECT id FROM quotes
+        WHERE instr(quote_text, char(65533)) > 0 OR instr(quote_text, char(31)) > 0
+      `).all();
+
+      for (const row of results as any[]) {
+        await env.DB.prepare("DELETE FROM quotes WHERE id = ?").bind(row.id).run();
+        try {
+          await env.VECTORIZE.deleteByIds([String(row.id)]);
+        } catch (vectorError) {
+          console.warn(`Could not delete vector for purged quote ${row.id}:`, vectorError);
+        }
+        purgedIds.push(row.id);
+      }
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+    let embedded = 0;
+    const insertedIds: number[] = [];
+
+    for (const seed of SEED_QUOTES) {
+      const result = await env.DB.prepare(`
+        INSERT OR IGNORE INTO quotes
+          (quote_text, author, source, language, ai_context, tags, related_quote_ids, color)
+        VALUES (?, ?, ?, ?, ?, ?, '[]', ?)
+      `).bind(
+        seed.quote_text,
+        seed.author,
+        seed.source,
+        seed.language,
+        seed.ai_context,
+        JSON.stringify(seed.tags),
+        normalizeColor(seed.quote_text, seed.color)
+      ).run();
+
+      if (!result.meta || !result.meta.changes) {
+        skipped++;
+        continue;
+      }
+
+      inserted++;
+      const insertedRow = await env.DB.prepare("SELECT id FROM quotes WHERE quote_text = ?")
+        .bind(seed.quote_text)
+        .first<{ id: number }>();
+
+      if (!insertedRow) continue;
+      insertedIds.push(insertedRow.id);
+
+      if (shouldEmbed) {
+        try {
+          const embeddingResponse = await env.AI.run("@cf/baai/bge-base-en-v1.5", {
+            text: [seed.quote_text],
+          });
+          if (embeddingResponse?.data?.[0]) {
+            await env.VECTORIZE.upsert([
+              { id: String(insertedRow.id), values: embeddingResponse.data[0] },
+            ]);
+            embedded++;
+          }
+        } catch (embeddingError) {
+          console.warn(`Embedding failed for seeded quote ${insertedRow.id}:`, embeddingError);
+        }
+      }
+    }
+
+    readCache.clear();
+
+    return new Response(
+      JSON.stringify({
+        message: "Curated quote collection seeded successfully.",
+        summary: {
+          seed_total: SEED_QUOTES.length,
+          inserted,
+          skipped,
+          inserted_ids: insertedIds,
+          purged: purgedIds.length,
+          purged_ids: purgedIds,
+          embeddings_created: embedded,
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+    );
+  } catch (error: any) {
+    console.error("Quote seeding failed:", error);
+    return new Response(
+      JSON.stringify({ error: "Seeding failed", message: error.message || String(error) }),
+      { status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+    );
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -429,6 +537,18 @@ export default {
       if (url.pathname === "/api/quotes/bulk" || url.pathname === "/quotes/bulk") {
         if (request.method === "POST") {
           return await handleBulkPostQuotes(request, env);
+        } else {
+          return new Response(JSON.stringify({ error: "Method not allowed" }), {
+            status: 405,
+            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+          });
+        }
+      }
+
+      // Maintenance: seed curated quotes and optionally purge unrecoverable rows
+      if (url.pathname === "/api/maintenance/seed") {
+        if (request.method === "POST" || request.method === "GET") {
+          return await handleSeedQuotes(env, url);
         } else {
           return new Response(JSON.stringify({ error: "Method not allowed" }), {
             status: 405,

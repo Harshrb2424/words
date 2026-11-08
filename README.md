@@ -193,6 +193,26 @@ The same operation is available at `POST /api/maintenance/repair`. Use
 `GET /api/quotes?include_corrupted=1` only for debugging; normal responses never
 include corrupted rows.
 
+### Seeding the Curated Collection
+
+`backend/seed-quotes.ts` contains the reviewed launch collection (anime,
+cinema, philosophy, and popular quotes). Seed it into D1 with:
+
+```bash
+bun run seed:quotes
+```
+
+By default the seeder also removes the legacy rows that could not be recovered.
+Set `WORDS_KEEP_CORRUPTED=1` to keep them hidden instead, or
+`WORDS_SEED_EMBEDDINGS=1` to also create Vectorize embeddings (slower):
+
+```bash
+WORDS_KEEP_CORRUPTED=1 bun run seed:quotes
+WORDS_SEED_EMBEDDINGS=1 bun run seed:quotes
+```
+
+The endpoint is `POST /api/maintenance/seed?purge_unrecoverable=1&embeddings=0`.
+
 ---
 
 ## Technical Performance Profile
