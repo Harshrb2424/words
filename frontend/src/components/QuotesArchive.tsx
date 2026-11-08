@@ -4,8 +4,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Quote } from "@/types";
 import MasonryGrid from "./MasonryGrid";
 import Header from "./Header";
-import { Search, Sparkles, Loader2, ArrowDown } from "lucide-react";
-import ThemeSwitcher from "./ThemeSwitcher";
+import Footer from "./Footer";
+import { Search, Loader2, ArrowDown } from "lucide-react";
 import { isRenderableQuote } from "@/utils/text";
 
 interface QuotesArchiveProps {
@@ -243,15 +243,7 @@ export default function QuotesArchive({ initialQuotes }: QuotesArchiveProps) {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border-custom py-10 text-center">
-        <div className="mx-auto max-w-7xl px-6 flex flex-col items-center gap-4 text-xs text-zinc-550 dark:text-zinc-450">
-          <ThemeSwitcher />
-          <div className="space-y-1">
-            <p>Words - AI Quote Archive & sanctuary.</p>
-            <p>Built with Next.js, Cloudflare Workers, D1, Vectorize, and Workers AI.</p>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

@@ -24,6 +24,26 @@ export default function Header() {
           </div>
 
           <div className="flex items-center gap-3">
+            <nav className="mr-2 hidden items-center gap-5 sm:flex">
+              <Link
+                href="/about"
+                className="text-[11px] font-semibold uppercase tracking-wider text-foreground/55 transition-colors hover:text-accent-custom"
+              >
+                About
+              </Link>
+              <Link
+                href="/about-me"
+                className="text-[11px] font-semibold uppercase tracking-wider text-foreground/55 transition-colors hover:text-accent-custom"
+              >
+                About Me
+              </Link>
+              <Link
+                href="/contact"
+                className="text-[11px] font-semibold uppercase tracking-wider text-foreground/55 transition-colors hover:text-accent-custom"
+              >
+                Contact
+              </Link>
+            </nav>
             <button
               onClick={() => setIsModalOpen(true)}
               className="flex items-center gap-1.5 rounded-full bg-foreground text-background px-4 py-2 text-xs font-semibold shadow-xs hover:opacity-90 transition-all cursor-pointer"

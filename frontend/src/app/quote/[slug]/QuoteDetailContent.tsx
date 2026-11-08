@@ -9,7 +9,7 @@ import { getAccentStyles } from "@/utils/color";
 import { cleanText } from "@/utils/text";
 import QuoteActions from "./QuoteActions";
 import WallpaperModal from "@/components/WallpaperModal";
-import ThemeSwitcher from "@/components/ThemeSwitcher";
+import Footer from "@/components/Footer";
 import Header from "@/components/Header";
 
 interface QuoteDetailContentProps {
@@ -189,15 +189,7 @@ export default function QuoteDetailContent({ quote, relatedQuotes }: QuoteDetail
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border-custom py-10 text-center">
-        <div className="mx-auto max-w-7xl px-6 flex flex-col items-center gap-4 text-xs text-zinc-550 dark:text-zinc-450">
-          <ThemeSwitcher />
-          <div className="space-y-1">
-            <p>Words - AI Quote Archive & sanctuary.</p>
-            <p>Built with Next.js, Cloudflare Workers, D1, Vectorize, and Workers AI.</p>
-          </div>
-        </div>
-      </footer>
+      <Footer />
 
 
       {/* Wallpaper Creator Overlay Modal - Rendered at direct root of the page! */}
