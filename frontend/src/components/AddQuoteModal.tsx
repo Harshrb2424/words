@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, Sparkles, AlertCircle, CheckCircle2, ArrowRight, ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { getQuoteSlug } from "@/utils/slug";
+import { Quote } from "@/types";
 
 interface AddQuoteModalProps {
   isOpen: boolean;
@@ -18,18 +19,38 @@ interface ProgressStep {
   status: StepStatus;
 }
 
+interface BulkResult {
+  status: "success" | "failed";
+  quote?: Quote;
+  quote_text?: string;
+  error?: string;
+}
+
+interface BulkSummary {
+  total: number;
+  successful: number;
+  failed: number;
+}
+
+interface BulkSuccessState extends BulkSummary {
+  results: BulkResult[];
+}
+
+interface QuoteSubmissionResponse {
+  quote?: Quote;
+  summary?: BulkSummary;
+  results?: BulkResult[];
+  message?: string;
+  error?: string;
+}
+
 export default function AddQuoteModal({ isOpen, onClose }: AddQuoteModalProps) {
   const router = useRouter();
   const [quotesList, setQuotesList] = useState<string[]>([""]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successQuote, setSuccessQuote] = useState<any>(null);
-  const [successBulk, setSuccessBulk] = useState<{
-    total: number;
-    successful: number;
-    failed: number;
-    results: any[];
-  } | null>(null);
+  const [successQuote, setSuccessQuote] = useState<Quote | null>(null);
+  const [successBulk, setSuccessBulk] = useState<BulkSuccessState | null>(null);
   
   // Custom pipeline steps to show active AI operations
   const [steps, setSteps] = useState<ProgressStep[]>([
@@ -125,7 +146,7 @@ export default function AddQuoteModal({ isOpen, onClose }: AddQuoteModalProps) {
       });
 
       completedSteps = true;
-      const data = await response.json();
+      const data = await response.json() as QuoteSubmissionResponse;
 
       if (!response.ok) {
         if (response.status === 409) {
@@ -146,16 +167,23 @@ export default function AddQuoteModal({ isOpen, onClose }: AddQuoteModalProps) {
       setSteps(prev => prev.map(s => ({ ...s, status: "success" })));
 
       if (isBulk) {
+        const summary = data.summary;
+        if (!summary) {
+          throw new Error("The server returned an invalid bulk response.");
+        }
+
+        const results = data.results || [];
         setSuccessBulk({
-          total: data.summary.total,
-          successful: data.summary.successful,
-          failed: data.summary.failed,
-          results: data.results,
+          total: summary.total,
+          successful: summary.successful,
+          failed: summary.failed,
+          results,
         });
 
-        const successfulQuotes = data.results
-          .filter((r: any) => r.status === "success")
-          .map((r: any) => r.quote);
+        const successfulQuotes = results
+          .filter((result) => result.status === "success")
+          .map((result) => result.quote)
+          .filter((quote): quote is Quote => Boolean(quote));
 
         if (successfulQuotes.length > 0) {
           try {
@@ -179,7 +207,7 @@ export default function AddQuoteModal({ isOpen, onClose }: AddQuoteModalProps) {
         }, 3500);
 
       } else {
-        setSuccessQuote(data.quote);
+        setSuccessQuote(data.quote ?? null);
         
         // Save newly created quote to local storage so homepage displays it instantly
         try {
@@ -203,9 +231,11 @@ export default function AddQuoteModal({ isOpen, onClose }: AddQuoteModalProps) {
         }, 1500);
       }
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Submission failed:", err);
-      setErrorMessage(err.message || "An unexpected error occurred during AI indexing.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "An unexpected error occurred during AI indexing."
+      );
     }
   };
 

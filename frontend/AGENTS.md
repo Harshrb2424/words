@@ -1,7 +1,11 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# Frontend notes
 
-# This is NOT the Next.js you know
+This app is pinned to **Next.js 15.5.29** so it can be built with
+`@cloudflare/next-on-pages` for the existing Cloudflare Pages project.
 
-This version has breaking changes - APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+Next.js 16 is not compatible with `@cloudflare/next-on-pages`; a future upgrade
+would require migrating the deployment to `@opennextjs/cloudflare` on
+Cloudflare Workers.
 
-<!-- END:nextjs-agent-rules -->
+Before changing framework-level behavior, check the docs for the installed
+Next.js version under `node_modules/next/dist/docs/`.

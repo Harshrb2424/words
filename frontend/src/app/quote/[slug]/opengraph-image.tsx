@@ -14,9 +14,7 @@ export const contentType = "image/png";
 
 export default async function Image({ params }: { params: Promise<{ slug: string }> | { slug: string } }) {
   // Resolve params safely for Next.js async params compatibility
-  const resolvedParams = typeof (params as any).then === "function" || "then" in params 
-    ? await params 
-    : params as { slug: string };
+  const resolvedParams = "then" in params ? await params : params;
     
   const { slug } = resolvedParams;
   const id = extractIdFromSlug(slug);

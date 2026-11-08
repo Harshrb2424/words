@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Copy, Share2, Image, Check, Heart } from "lucide-react";
 import { Quote } from "@/types";
 import { getAccentStyles } from "@/utils/color";
+import { cssVariables } from "@/utils/css";
 
 interface QuoteActionsProps {
   quote: Quote;
@@ -85,11 +86,11 @@ export default function QuoteActions({ quote, onOpenWallpaper }: QuoteActionsPro
 
   return (
     <div
-      style={{
-        ["--quote-accent" as any]: accent.textColor,
-        ["--quote-accent-bg" as any]: accent.bgColor,
-        ["--quote-accent-border" as any]: accent.borderColor,
-      }}
+      style={cssVariables({
+        "--quote-accent": accent.textColor,
+        "--quote-accent-bg": accent.bgColor,
+        "--quote-accent-border": accent.borderColor,
+      })}
       className="flex flex-wrap items-center justify-center gap-3 pt-2 w-full mx-auto"
     >
       {/* Heart / Like Quote Pill */}

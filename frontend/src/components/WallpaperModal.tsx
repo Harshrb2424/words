@@ -275,7 +275,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
 
       ctx.save();
       // Apply filters (blur, brightness/dim, grayscale, sepia)
-      let filterParts = [];
+      const filterParts: string[] = [];
       if (blurAmount > 0) filterParts.push(`blur(${blurAmount}px)`);
       if (brightnessAmount < 100) filterParts.push(`brightness(${brightnessAmount}%)`);
       if (grayscaleAmount > 0) filterParts.push(`grayscale(${grayscaleAmount}%)`);
@@ -371,7 +371,7 @@ export default function WallpaperModal({ isOpen, onClose, quote }: WallpaperModa
     }
 
     // Dynamic vertical start position
-    let startY = (height - totalBlockHeight) / 2;
+    const startY = (height - totalBlockHeight) / 2;
 
     // 4. Draw Quote Lines
     ctx.fillStyle = textPrimary;

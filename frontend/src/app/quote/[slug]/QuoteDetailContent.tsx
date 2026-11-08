@@ -7,6 +7,7 @@ import { Quote } from "@/types";
 import { getQuoteSlug } from "@/utils/slug";
 import { getAccentStyles } from "@/utils/color";
 import { cleanText } from "@/utils/text";
+import { cssVariables } from "@/utils/css";
 import QuoteActions from "./QuoteActions";
 import WallpaperModal from "@/components/WallpaperModal";
 import Footer from "@/components/Footer";
@@ -23,11 +24,11 @@ export default function QuoteDetailContent({ quote, relatedQuotes }: QuoteDetail
 
   return (
     <div
-      style={{
-        ["--quote-accent" as any]: accent.textColor,
-        ["--quote-accent-bg" as any]: accent.bgColor,
-        ["--quote-accent-border" as any]: accent.borderColor,
-      }}
+      style={cssVariables({
+        "--quote-accent": accent.textColor,
+        "--quote-accent-bg": accent.bgColor,
+        "--quote-accent-border": accent.borderColor,
+      })}
       className="flex flex-col min-h-screen transition-colors duration-300 relative overflow-hidden"
     >
       {/* Subtle dynamic background glow spot */}

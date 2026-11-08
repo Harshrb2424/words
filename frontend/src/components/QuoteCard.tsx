@@ -6,6 +6,7 @@ import Link from "next/link";
 import { getQuoteSlug } from "@/utils/slug";
 import { getAccentStyles } from "@/utils/color";
 import { cleanText } from "@/utils/text";
+import { cssVariables } from "@/utils/css";
 
 interface QuoteCardProps {
   quote: Quote;
@@ -28,10 +29,10 @@ export default function QuoteCard({
   return (
     <div
       id={`quote-${quote.id}`}
-      style={{
-        ["--quote-accent" as any]: accent.textColor,
-        ["--quote-accent-bg" as any]: accent.bgColor,
-        ["--quote-accent-border" as any]: accent.borderColor,
+      style={cssVariables({
+        "--quote-accent": accent.textColor,
+        "--quote-accent-bg": accent.bgColor,
+        "--quote-accent-border": accent.borderColor,
         backgroundColor: isHighlighted
           ? accent.bgColor
           : (quote.color
@@ -43,7 +44,7 @@ export default function QuoteCard({
               ? `rgba(${r}, ${g}, ${b}, 0.18)`
               : undefined),
         boxShadow: isHighlighted ? `0 0 0 2px ${accent.borderColor}` : undefined,
-      }}
+      })}
       className="break-inside-avoid mb-6 w-full rounded-2xl border p-6 transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-md bg-card-custom border-border-custom hover:border-zinc-400 dark:hover:border-zinc-650 animate-fade-in"
     >
       {/* Quote Body - clickable link to dynamic slug page */}
